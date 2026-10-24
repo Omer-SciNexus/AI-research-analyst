@@ -6,8 +6,8 @@ An agentic research & report analyst built with **RAG, LangChain, LangGraph** an
 
 | Stage | Goal | Status |
 |---|---|---|
-| 0 | Setup: local LLM (Ollama), project skeleton, smoke test | ⏳ |
-| 1 | Basic RAG: PDF ingestion, local embeddings, Qdrant, Streamlit UI | ⏳ |
+| 0 | Setup: local LLM (Ollama), project skeleton, smoke test | ✅ |
+| 1 | Basic RAG: PDF ingestion, local embeddings, Qdrant, Streamlit UI | ✅ |
 | 2 | Better RAG: hybrid search (BM25 + vector), re-ranker, smart chunking | ✅ |
 | 3 | LangGraph agents: planner / researcher / fact-checker / writer, human-in-the-loop | ✅ |
 | 4 | Evaluation & observability: retrieval/answer metrics, LLM judge, local tracing | ✅ |
@@ -114,7 +114,8 @@ uv run python scripts/evaluate.py --answers   # + answer quality, several minute
 | MRR | mean of 1 / rank of the correct chunk |
 | keyword recall | share of the expected facts that appear in the answer |
 | citation rate | answers that cite at least one passage |
-| faithfulness | LLM judge: every claim is supported by the retrieved passages |
+| grounding | share of the answer's content words found in the retrieved passages (no LLM) |
+| faithfulness | LLM judge (`judge.py`, YES/NO): every claim is supported by the retrieved passages |
 | refusal accuracy | unanswerable questions answered with "couldn't find" |
 
 First results (17 questions, top-4, `nomic-embed-text`):
@@ -128,11 +129,22 @@ First results (17 questions, top-4, `nomic-embed-text`):
 
 Re-ranking gives the best ranking. Hybrid alone is slightly behind dense on this small, mostly paraphrased set: RRF fusion lets BM25's weaker matches pull good dense hits down, which the re-ranker then repairs. On corpora heavy in exact names, codes and numbers, BM25's contribution grows.
 
+Answer quality (`llama3.2:3b` on CPU, hybrid + rerank, ~7 s per answer):
+
+| keyword recall | citation rate | grounding | refusal accuracy | faithfulness (3B judge) |
+|---|---|---|---|---|
+| 0.80 | 1.00 | 0.94 | 1.00 | 0.43 — unreliable, see below |
+
+- All three keyword misses come from the distractor: the right passage was retrieved, but the 3B model answered from a similar glossary passage ("common sizes are 384, 1024, 1536" instead of the project's 768). High grounding shows it rarely invents facts; its weakness is choosing between look-alike passages. A larger model, or keeping only the top 2–3 re-ranked passages, should help.
+- **A 3B model is not a reliable judge.** It rejected roughly 10 of 14 answers that a manual check found correct. Small models also do worse with JSON verdicts: a structured `faithful` boolean came back `false` even for exact quotes, which is why `judge.py` asks a one-word YES/NO question (and judges sentence by sentence to find unsupported claims). Point `JUDGE_PROVIDER` / `JUDGE_MODEL` at a larger model (e.g. Groq's free `llama-3.3-70b-versatile`) for trustworthy faithfulness scores and fact-checks; until then, read faithfulness together with grounding.
+
 **Tracing**: a LangChain callback (`tracing.py`) appends every top-level run and every LLM call (node, model, latency, input/output tokens) to `data/traces/<date>.jsonl`. LangGraph passes it down to every node, including parallel research tasks. The Evaluation page lists runs, their LLM calls and generation speed. For a hosted dashboard, Langfuse's free cloud tier plugs in by setting `LANGFUSE_*` in `.env` and running `uv add langfuse`; self-hosting Langfuse needs about 2 GB of Docker images, so it isn't the default.
 
 ### Troubleshooting
 
 - **`llama-server process has terminated: exit status 0xc0000005`**: Ollama tried to use an old/unsupported GPU (e.g. GeForce GT 730 via Vulkan). Force CPU by setting the user environment variables `GGML_VK_VISIBLE_DEVICES=-1` and `CUDA_VISIBLE_DEVICES=-1`, then restart Ollama.
+- **`[WinError 10054] An existing connection was forcibly closed` / Ollama keeps restarting**: a VPN that hooks Windows networking can crash Ollama. Astrill installs a Winsock LSP (`ASProxy64.dll`, see `netsh winsock show catalog`) that every process loads, in any VPN mode, and Ollama dies inside `WSASend` (exit `0xc0000005`, logged in `%LOCALAPPDATA%\Ollama\server.log`). The tray app restarts the server within seconds and all LLM/embedding calls here retry, so runs survive; streaming chat only retries before the first token. To remove the cause, exclude Ollama from the VPN or remove the LSP (`netsh winsock reset`, which affects the VPN).
+- **Ollama app keeps downloading updates**: the tray app downloads each new installer (~1.6 GB) in the background. Turn off auto-update in Ollama's settings (stored as `auto_update_enabled` in `%LOCALAPPDATA%\Ollama\db.sqlite`). `OLLAMA_NO_CLOUD=1` disables its cloud features.
 - **Model download keeps stalling**: `ollama pull` opens 16 parallel connections, which flaky connections can't sustain. Download the model files with a single resumable stream instead and drop them into `OLLAMA_MODELS/blobs` with the manifest under `manifests/registry.ollama.ai/library/<model>/<tag>`. Set `OLLAMA_NOPRUNE=1` so Ollama doesn't delete them half-way.
 
 ### Switching LLM provider
@@ -160,7 +172,8 @@ src/research_analyst/   application package
   rag.py                retrieve → answer with citations
   agent.py              LangGraph research agent
   web.py                DuckDuckGo search (no API key)
-  evaluation.py         retrieval + answer metrics, LLM judge
+  evaluation.py         retrieval + answer metrics
+  judge.py              YES/NO LLM judge (evaluation + agent fact-check)
   tracing.py            JSONL tracer (+ optional Langfuse)
   ui.py                 shared Streamlit helpers
 scripts/                runnable entry points (hello_llm, ingest, ask, research, evaluate)
