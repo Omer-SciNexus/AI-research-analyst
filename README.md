@@ -7,7 +7,7 @@ An agentic research & report analyst built with **RAG, LangChain, LangGraph** an
 | Stage | Goal | Status |
 |---|---|---|
 | 0 | Setup: local LLM (Ollama), project skeleton, smoke test | ⏳ |
-| 1 | Basic RAG: PDF ingestion, local embeddings, Chroma, Streamlit UI | |
+| 1 | Basic RAG: PDF ingestion, local embeddings, Qdrant, Streamlit UI | ⏳ |
 | 2 | Better RAG: hybrid search (BM25 + vector), re-ranker, smart chunking | |
 | 3 | LangGraph agents: planner / researcher / fact-checker / writer, human-in-the-loop | |
 | 4 | Evaluation & observability: RAGAS, Langfuse | |
@@ -35,6 +35,34 @@ uv run python scripts/hello_llm.py "What is LangGraph?"
 uv run pytest
 ```
 
+## Stage 1 — Chat with your documents
+
+```bash
+# Index documents (PDF / .md / .txt). Default folder: data/docs
+uv run python scripts/ingest.py samples
+
+# Ask from the command line
+uv run python scripts/ask.py "Why was Qdrant chosen instead of Chroma?"
+
+# Or use the web UI (upload + chat with citations) at http://localhost:8501
+uv run streamlit run app.py
+```
+
+How it works:
+
+1. **Load**: PDFs are read page by page (pypdf), so every chunk keeps its page number.
+2. **Split**: recursive character splitter, 1000 chars with 150 overlap.
+3. **Embed**: `nomic-embed-text` in Ollama (768-dim), with the `search_document:` / `search_query:` prefixes the model expects.
+4. **Store**: Qdrant in local mode (`data/qdrant`), no server. Chunk ids are deterministic, so re-indexing a file replaces its old chunks.
+5. **Answer**: top-4 chunks go to the LLM as numbered passages; it must cite them like `[1]` or say it couldn't find the answer.
+
+> Qdrant local mode locks its folder: stop the Streamlit app before running `scripts/ingest.py` or `scripts/ask.py`.
+
+### Troubleshooting
+
+- **`llama-server process has terminated: exit status 0xc0000005`**: Ollama tried to use an old/unsupported GPU (e.g. GeForce GT 730 via Vulkan). Force CPU by setting the user environment variables `GGML_VK_VISIBLE_DEVICES=-1` and `CUDA_VISIBLE_DEVICES=-1`, then restart Ollama.
+- **Model download keeps stalling**: `ollama pull` opens 16 parallel connections, which flaky connections can't sustain. Download the model files with a single resumable stream instead and drop them into `OLLAMA_MODELS/blobs` with the manifest under `manifests/registry.ollama.ai/library/<model>/<tag>`. Set `OLLAMA_NOPRUNE=1` so Ollama doesn't delete them half-way.
+
 ### Switching LLM provider
 
 All code calls `research_analyst.llm.get_llm()`; the provider is chosen in `.env`:
@@ -48,11 +76,17 @@ All code calls `research_analyst.llm.get_llm()`; the provider is chosen in `.env
 ## Project layout
 
 ```
+app.py                  Streamlit UI (upload + chat)
 src/research_analyst/   application package
   config.py             settings from .env
   llm.py                provider-agnostic LLM factory
-scripts/                runnable entry points
-tests/                  pytest suite
-data/                   local documents (git-ignored)
+  embeddings.py         Ollama embeddings with nomic task prefixes
+  vectorstore.py        Qdrant local-mode store helpers
+  ingest.py             load → split → index
+  rag.py                retrieve → answer with citations
+scripts/                runnable entry points (hello_llm, ingest, ask)
+samples/                sample document used by tests
+tests/                  pytest suite (Ollama tests auto-skip if models are missing)
+data/                   local documents + vector DB (git-ignored)
 notebooks/              experiments
 ```
