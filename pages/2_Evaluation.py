@@ -1,8 +1,11 @@
-"""Stage 4 UI: evaluation scores and local traces."""
+"""Stage 4-5 UI: evaluation scores, the confidence model and local traces."""
+
+import json
 
 import pandas as pd
 import streamlit as st
 
+from research_analyst.config import settings
 from research_analyst.evaluation import latest_results, run_evaluation, save_results
 from research_analyst.tracing import load_records
 
@@ -11,7 +14,40 @@ st.title("📊 Evaluation & Traces")
 
 score = st.column_config.ProgressColumn(min_value=0.0, max_value=1.0, format="%.3f")
 
-tab_eval, tab_traces = st.tabs(["Evaluation", "Traces"])
+tab_eval, tab_model, tab_traces = st.tabs(["Evaluation", "Confidence model", "Traces"])
+
+with tab_model:
+    report_path = settings.confidence_model_path.with_suffix(".json")
+    if not report_path.exists():
+        st.info(
+            "Not trained yet. Run `uv run python scripts/make_ml_dataset.py` "
+            "then `uv run python scripts/train_confidence.py`."
+        )
+    else:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        st.caption(
+            f"Predicts whether the documents can answer a question from retrieval signals, before any LLM call. "
+            f"{report['samples']} training questions ({report['answerable']} answerable), "
+            f"{report['cv_folds']}-fold cross-validation. Chosen: **{report['chosen']}**, threshold **{report['threshold']}** "
+            "(keeps ≥ 95% of answerable questions)."
+        )
+        models = pd.DataFrame(report["models"]).T.drop(columns="threshold", errors="ignore")
+        st.dataframe(models, column_config={c: score for c in models.columns}, width="stretch")
+
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Feature weights**")
+            weights = pd.DataFrame({"weight": report["importance"]}).sort_values("weight", key=abs, ascending=False)
+            st.dataframe(weights, width="stretch")
+        with right:
+            holdout = report.get("holdout_eval_set")
+            if holdout:
+                st.markdown(f"**Hold-out: {holdout['questions']} hand-written questions**")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Accuracy", holdout["accuracy"])
+                c2.metric("Answerable kept", holdout["answerable_kept"])
+                c3.metric("Unanswerable caught", "—" if holdout["unanswerable_caught"] is None else holdout["unanswerable_caught"])
+                st.dataframe(pd.DataFrame(holdout["rows"]), width="stretch", hide_index=True)
 
 with tab_eval:
     st.caption(
