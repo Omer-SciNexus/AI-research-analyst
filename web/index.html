@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research Analyst</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --border: #e3e3de;
+    --accent: #2f6fdb; --accent-text: #ffffff; --good: #1f8a4c; --warn: #b5651d; --code: #f0f0ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #1f1f1e; --text: #ececea; --muted: #a0a09a; --border: #33332f;
+      --accent: #6b9bff; --accent-text: #0d1424; --good: #4cc27f; --warn: #e3a35c; --code: #2a2a28;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 17px; margin: 0; }
+  header .status { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 53px); }
+  aside { border-right: 1px solid var(--border); padding: 16px; background: var(--panel); }
+  aside h2, section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  .doc { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+  .doc button { border: 0; background: none; color: var(--muted); cursor: pointer; }
+  section { padding: 16px 24px; max-width: 900px; width: 100%; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tabs button { padding: 6px 14px; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; cursor: pointer; }
+  .tabs button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  textarea, input[type=text] { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
+  button.primary { padding: 8px 16px; border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-text); font: inherit; cursor: pointer; }
+  button.primary:disabled { opacity: .5; cursor: progress; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .msg { padding: 12px 14px; border-radius: 8px; margin: 10px 0; background: var(--panel); border: 1px solid var(--border); }
+  .msg.user { background: transparent; border-style: dashed; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .meta .good { color: var(--good); } .meta .warn { color: var(--warn); }
+  details { margin-top: 6px; font-size: 13px; } details p { color: var(--muted); margin: 4px 0 8px; }
+  .report h1 { font-size: 20px; } .report h2 { font-size: 16px; margin-top: 18px; } .report h3 { font-size: 15px; }
+  code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
+  .hidden { display: none; }
+  label.small { font-size: 13px; color: var(--muted); }
+  @media (max-width: 720px) { main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--border); } section { padding: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 Research Analyst</h1>
+  <span class="status" id="status">connecting…</span>
+</header>
+<main>
+  <aside>
+    <h2>Documents</h2>
+    <div id="docs"></div>
+    <div class="row">
+      <input type="file" id="files" multiple accept=".pdf,.md,.txt">
+      <button class="primary" id="upload">Index</button>
+    </div>
+  </aside>
+  <section>
+    <div class="tabs">
+      <button class="active" data-tab="chat">Chat</button>
+      <button data-tab="research">Research agent</button>
+    </div>
+
+    <div id="chat">
+      <div id="messages"></div>
+      <textarea id="question" rows="2" placeholder="Ask about your documents…"></textarea>
+      <div class="row">
+        <button class="primary" id="send">Ask</button>
+        <label class="small"><input type="checkbox" id="skip" checked> skip the LLM when documents can't answer</label>
+      </div>
+    </div>
+
+    <div id="research" class="hidden">
+      <textarea id="rq" rows="2" placeholder="Research question, e.g. How does hybrid search improve RAG?"></textarea>
+      <div class="row">
+        <label class="small">Web search
+          <select id="web"><option value="off">off</option><option value="auto">auto</option><option value="always">always</option></select>
+        </label>
+        <button class="primary" id="plan">Plan research</button>
+        <span class="small" id="rstatus"></span>
+      </div>
+      <div id="review" class="hidden">
+        <h2 style="margin-top:16px">Review the plan (one sub-question per line)</h2>
+        <textarea id="planText" rows="5"></textarea>
+        <div class="row">
+          <button class="primary" id="approve">Approve and research</button>
+          <input type="text" id="feedback" placeholder="…or feedback for the planner" style="flex:1">
+          <button class="primary" id="revise">Revise</button>
+        </div>
+      </div>
+      <div id="report" class="report"></div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// Minimal Markdown → HTML for reports (headings, lists, bold, links); input is escaped first.
+function markdown(md) {
+  const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  let html = "", list = null;
+  for (const raw of esc(md).split("\n")) {
+    const line = raw.trimEnd();
+    const item = line.match(/^\s*(?:[-*]|(\d+)\.)\s+(.*)$/);
+    if (item) {
+      const tag = item[1] ? "ol" : "ul";
+      if (list !== tag) { if (list) html += `</${list}>`; html += `<${tag}>`; list = tag; }
+      html += `<li>${inline(item[2])}</li>`; continue;
+    }
+    if (list) { html += `</${list}>`; list = null; }
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`;
+    else if (line) html += `<p>${inline(line)}</p>`;
+  }
+  return html + (list ? `</${list}>` : "");
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+  return res.json();
+}
+
+async function refresh() {
+  const h = await api("/api/health");
+  $("status").textContent = `${h.llm} · ${h.chunks} chunks` + (h.confidence_model ? ` · confidence model (${h.confidence_model.name})` : "");
+  $("web").value = h.default_web_mode;
+  const docs = await api("/api/documents");
+  $("docs").innerHTML = Object.entries(docs).map(([name, n]) =>
+    `<div class="doc"><span>${esc(name)} <span class="meta">${n} chunks</span></span><button title="remove" data-name="${esc(name)}">✕</button></div>`
+  ).join("") || '<p class="meta">Nothing indexed yet.</p>';
+}
+
+$("docs").addEventListener("click", async (e) => {
+  const name = e.target.dataset.name;
+  if (name && confirm(`Remove ${name} from the index?`)) { await api(`/api/documents/${encodeURIComponent(name)}`, { method: "DELETE" }); refresh(); }
+});
+
+$("upload").onclick = async () => {
+  const form = new FormData();
+  for (const f of $("files").files) form.append("files", f);
+  if (!form.has("files")) return;
+  $("upload").disabled = true;
+  try { await api("/api/documents", { method: "POST", body: form }); $("files").value = ""; await refresh(); }
+  catch (err) { alert(err.message); } finally { $("upload").disabled = false; }
+};
+
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+  $("chat").classList.toggle("hidden", b.dataset.tab !== "chat");
+  $("research").classList.toggle("hidden", b.dataset.tab !== "research");
+});
+
+function sourcesHtml(sources) {
+  if (!sources.length) return "";
+  return `<details><summary>Sources (${sources.length})</summary>` + sources.map((s, i) =>
+    `<b>[${i + 1}] ${esc(s.label)}</b>${s.rerank_score != null ? ` <span class="meta">rerank ${s.rerank_score.toFixed(3)}</span>` : ""}` +
+    (s.url ? ` <a href="${esc(s.url)}" target="_blank" rel="noopener">link</a>` : "") + `<p>${esc(s.text.slice(0, 500))}</p>`
+  ).join("") + "</details>";
+}
+
+// Chat: POST /api/ask/stream and parse server-sent events from the response body.
+async function ask() {
+  const question = $("question").value.trim();
+  if (!question) return;
+  $("question").value = ""; $("send").disabled = true;
+  $("messages").insertAdjacentHTML("beforeend", `<div class="msg user">${esc(question)}</div>`);
+  const box = document.createElement("div"); box.className = "msg"; box.innerHTML = '<span class="meta">searching…</span>';
+  $("messages").append(box);
+  let text = "", meta = null;
+  try {
+    const res = await fetch("/api/ask/stream", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, skip_low_confidence: $("skip").checked }),
+    });
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, cut); buffer = buffer.slice(cut + 2);
+        const event = block.match(/^event: (.*)$/m)?.[1], data = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? "null");
+        if (event === "meta") meta = data;
+        if (event === "token") text += data;
+        if (event === "error") text += `\n\n⚠️ ${data}`;
+        box.innerHTML = `<div>${markdown(text || "…")}</div>`;
+      }
+    }
+  } catch (err) { text += `\n\n⚠️ ${err.message}`; }
+  let note = "";
+  if (meta?.confidence != null) {
+    const ok = meta.confidence >= meta.threshold;
+    note = `<div class="meta">🎯 confidence <span class="${ok ? "good" : "warn"}">${meta.confidence.toFixed(2)}</span>` +
+      (meta.llm_skipped ? " · LLM skipped" : "") + "</div>";
+  }
+  box.innerHTML = `<div>${markdown(text)}</div>${note}${sourcesHtml(meta?.sources ?? [])}`;
+  $("send").disabled = false;
+}
+$("send").onclick = ask;
+$("question").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } });
+
+// Research agent: plan → human review → report
+let thread = null;
+function showResearch(r) {
+  thread = r.thread_id;
+  $("review").classList.toggle("hidden", r.status !== "awaiting_approval");
+  if (r.status === "awaiting_approval") { $("planText").value = r.plan.join("\n"); $("report").innerHTML = ""; }
+  if (r.status === "done") {
+    $("report").innerHTML = (r.issues.length ? `<p class="meta warn">Fact-check flagged ${r.issues.length} issue(s).</p>` : '<p class="meta good">Fact-check passed.</p>') + markdown(r.report);
+  }
+}
+async function researchCall(path, body, label) {
+  document.querySelectorAll("#research button").forEach((b) => b.disabled = true);
+  $("rstatus").textContent = `${label}… (a local 3B model on CPU takes a few minutes)`;
+  try { showResearch(await api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })); $("rstatus").textContent = ""; }
+  catch (err) { $("rstatus").textContent = `⚠️ ${err.message}`; }
+  finally { document.querySelectorAll("#research button").forEach((b) => b.disabled = false); }
+}
+$("plan").onclick = () => $("rq").value.trim() && researchCall("/api/research", { question: $("rq").value.trim(), web: $("web").value }, "Planning");
+$("approve").onclick = () => researchCall(`/api/research/${thread}/resume`, { action: "approve", plan: $("planText").value.split("\n").filter((l) => l.trim()) }, "Researching");
+$("revise").onclick = () => $("feedback").value.trim() && researchCall(`/api/research/${thread}/resume`, { action: "revise", feedback: $("feedback").value.trim() }, "Re-planning");
+
+refresh().catch((err) => $("status").textContent = `⚠️ ${err.message}`);
+</script>
+</body>
+</html>

@@ -62,5 +62,8 @@ class Settings:
     skip_low_confidence: bool = os.getenv("SKIP_LOW_CONFIDENCE", "true").lower() in {"1", "true", "yes"}
     auto_web_fallback: bool = os.getenv("AUTO_WEB_FALLBACK", "true").lower() in {"1", "true", "yes"}
 
+    # Stage 6: API / deployment
+    index_samples_on_start: bool = os.getenv("INDEX_SAMPLES_ON_START", "false").lower() in {"1", "true", "yes"}
+
 
 settings = Settings()
