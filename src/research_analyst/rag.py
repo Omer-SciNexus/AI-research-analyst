@@ -1,12 +1,13 @@
 """Basic RAG: retrieve relevant chunks, then answer with inline citations."""
 
+import time
 from collections.abc import Iterator
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_qdrant import QdrantVectorStore
 
-from research_analyst.llm import get_llm
+from research_analyst.llm import RETRYABLE_ERRORS, get_llm, with_retry
 from research_analyst.retrieval import search
 from research_analyst.tracing import get_callbacks
 
@@ -46,16 +47,42 @@ def retrieve(question: str, store: QdrantVectorStore, **search_options) -> list[
     return search(question, store, **search_options)
 
 
-def stream_answer(question: str, docs: list[Document]) -> Iterator[str]:
+def _inputs(question: str, docs: list[Document]) -> dict:
+    return {"context": format_context(docs), "question": question}
+
+
+def stream_answer(question: str, docs: list[Document], attempts: int = 4) -> Iterator[str]:
+    """Stream the answer token by token (for the UI).
+
+    A dropped connection before the first token is retried; once text has been shown,
+    retrying would repeat it, so the error is raised instead.
+    """
     if not docs:
         yield NOT_FOUND
         return
     chain = PROMPT | get_llm()
     config = {"callbacks": get_callbacks(), "run_name": "document_chat"}
-    for chunk in chain.stream({"context": format_context(docs), "question": question}, config=config):
-        yield chunk.content
+    for attempt in range(1, attempts + 1):
+        started = False
+        try:
+            for chunk in chain.stream(_inputs(question, docs), config=config):
+                started = True
+                yield chunk.content
+            return
+        except RETRYABLE_ERRORS:
+            if started or attempt == attempts:
+                raise
+            time.sleep(2 * attempt)
+
+
+def generate_answer(question: str, docs: list[Document]) -> str:
+    """Whole answer at once, retried if the LLM server drops the connection."""
+    if not docs:
+        return NOT_FOUND
+    config = {"callbacks": get_callbacks(), "run_name": "document_chat"}
+    return with_retry(PROMPT | get_llm()).invoke(_inputs(question, docs), config=config).content
 
 
 def answer(question: str, store: QdrantVectorStore) -> tuple[str, list[Document]]:
     docs = retrieve(question, store)
-    return "".join(stream_answer(question, docs)), docs
+    return generate_answer(question, docs), docs
