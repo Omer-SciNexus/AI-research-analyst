@@ -17,7 +17,7 @@ import uuid
 
 from langgraph.types import Command
 
-from research_analyst.agent import ResearchAgent, get_checkpointer, initial_state
+from research_analyst.agent import ResearchAgent, get_checkpointer, initial_state, run_config
 from research_analyst.config import settings
 from research_analyst.vectorstore import get_vectorstore
 
@@ -39,7 +39,7 @@ def main() -> None:
 
     question = " ".join(args.question)
     graph = ResearchAgent(get_vectorstore()).build(get_checkpointer())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    config = run_config(str(uuid.uuid4()))
     payload = initial_state(question, use_web=args.web)
     start = time.perf_counter()
 

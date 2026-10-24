@@ -8,6 +8,7 @@ from langchain_qdrant import QdrantVectorStore
 
 from research_analyst.llm import get_llm
 from research_analyst.retrieval import search
+from research_analyst.tracing import get_callbacks
 
 NOT_FOUND = "I couldn't find this in the indexed documents."
 
@@ -50,7 +51,8 @@ def stream_answer(question: str, docs: list[Document]) -> Iterator[str]:
         yield NOT_FOUND
         return
     chain = PROMPT | get_llm()
-    for chunk in chain.stream({"context": format_context(docs), "question": question}):
+    config = {"callbacks": get_callbacks(), "run_name": "document_chat"}
+    for chunk in chain.stream({"context": format_context(docs), "question": question}, config=config):
         yield chunk.content
 
 

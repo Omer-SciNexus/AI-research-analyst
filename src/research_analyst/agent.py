@@ -34,6 +34,7 @@ from research_analyst.config import settings
 from research_analyst.llm import get_llm
 from research_analyst.rag import NOT_FOUND, PROMPT as ANSWER_PROMPT, format_context, source_label
 from research_analyst.retrieval import search
+from research_analyst.tracing import get_callbacks
 from research_analyst.web import web_search
 
 MAX_SUB_QUESTIONS = 4
@@ -292,3 +293,8 @@ def get_checkpointer() -> SqliteSaver:
 
 def initial_state(question: str, use_web: bool = False) -> ResearchState:
     return ResearchState(question=question, use_web=use_web, findings=[], revisions=0, issues=[])
+
+
+def run_config(thread_id: str) -> dict:
+    """Graph config: which saved run to continue, plus tracing for every node's LLM calls."""
+    return {"configurable": {"thread_id": thread_id}, "callbacks": get_callbacks(), "run_name": "research_agent"}

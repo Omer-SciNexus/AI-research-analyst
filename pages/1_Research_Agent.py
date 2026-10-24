@@ -5,7 +5,7 @@ import uuid
 import streamlit as st
 from langgraph.types import Command
 
-from research_analyst.agent import initial_state
+from research_analyst.agent import initial_state, run_config
 from research_analyst.ui import get_research_graph
 
 st.set_page_config(page_title="Research Agent", page_icon="🔬", layout="wide")
@@ -22,7 +22,7 @@ ss = st.session_state
 
 
 def config() -> dict:
-    return {"configurable": {"thread_id": ss.research_thread}}
+    return run_config(ss.research_thread)
 
 
 def run(payload) -> None:
@@ -59,11 +59,11 @@ if snapshot.interrupts:
     plan_text = st.text_area("Sub-questions", "\n".join(snapshot.interrupts[0].value["plan"]), height=150)
     approve_col, revise_col = st.columns(2)
     with approve_col:
-        if st.button("✅ Approve and research", type="primary", use_container_width=True):
+        if st.button("✅ Approve and research", type="primary", width="stretch"):
             run(Command(resume={"action": "approve", "plan": plan_text.splitlines()}))
     with revise_col:
         feedback = st.text_input("Feedback for the planner", placeholder="e.g. focus on costs")
-        if st.button("🔁 Revise plan", use_container_width=True, disabled=not feedback.strip()):
+        if st.button("🔁 Revise plan", width="stretch", disabled=not feedback.strip()):
             run(Command(resume={"action": "revise", "feedback": feedback.strip()}))
 
 elif report := snapshot.values.get("report"):
