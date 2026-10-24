@@ -22,6 +22,27 @@ def test_split_keeps_metadata_and_numbers_chunks():
     assert [c.metadata["chunk"] for c in chunks] == list(range(len(chunks)))
 
 
+def test_markdown_chunks_follow_sections():
+    chunks = split_documents(load_file(SAMPLES / "rag_handbook.md"))
+    sections = [c.metadata.get("section") for c in chunks]
+    assert "RAG Handbook (sample document) > Vector store" in sections
+    vector_chunk = chunks[sections.index("RAG Handbook (sample document) > Vector store")]
+    assert vector_chunk.page_content.startswith("## Vector store")
+    assert "Chunking" not in vector_chunk.page_content  # never straddles two sections
+
+
+def test_continuation_chunks_get_section_prefix():
+    long_section = "# Guide\n\n## Setup\n\n" + "Install the tools carefully. " * 80
+    chunks = split_documents([Document(page_content=long_section, metadata={"source": "guide.md"})])
+    assert len(chunks) > 1
+    assert chunks[1].page_content.startswith("[Guide > Setup]")
+
+
+def test_source_label_uses_section_for_markdown():
+    doc = Document(page_content="x", metadata={"source": "a.md", "section": "Guide > Setup"})
+    assert source_label(doc) == "a.md › Setup"
+
+
 def test_chunk_ids_are_deterministic_and_unique():
     assert chunk_ids("a.pdf", 3) == chunk_ids("a.pdf", 3)
     assert len(set(chunk_ids("a.pdf", 3) + chunk_ids("b.pdf", 3))) == 6
