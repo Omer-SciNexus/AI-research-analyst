@@ -1,0 +1,9 @@
+.venv
+.git
+data
+notebooks
+tests
+**/__pycache__
+.pytest_cache
+.env
+.streamlit
