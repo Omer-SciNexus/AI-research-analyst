@@ -1,4 +1,4 @@
-"""Stage 1 UI: upload documents and chat with them.
+"""Document chat: upload documents and chat with them (Stages 1-2).
 
 Run:  uv run streamlit run app.py
 """
@@ -8,15 +8,10 @@ import streamlit as st
 from research_analyst.config import settings
 from research_analyst.ingest import SUPPORTED_SUFFIXES, ingest_file
 from research_analyst.rag import retrieve, source_label, stream_answer
-from research_analyst.vectorstore import get_vectorstore, list_sources
+from research_analyst.ui import get_store as store
+from research_analyst.vectorstore import MODES, list_sources
 
 st.set_page_config(page_title="Research Analyst", page_icon="📚", layout="wide")
-
-
-@st.cache_resource
-def store():
-    # Cached so reruns reuse one client (Qdrant local mode locks its folder).
-    return get_vectorstore()
 
 
 with st.sidebar:
@@ -43,14 +38,23 @@ with st.sidebar:
     else:
         st.caption("Nothing indexed yet.")
 
+    st.subheader("🔎 Retrieval")
+    mode = st.selectbox(
+        "Search mode",
+        list(MODES),
+        index=list(MODES).index(settings.retrieval_mode),
+        help="dense = meaning (embeddings) · sparse = keywords (BM25) · hybrid = both, fused with RRF",
+    )
+    use_rerank = st.toggle("Re-rank results", value=settings.rerank, help=f"Cross-encoder: {settings.reranker_model}")
+
     st.divider()
     st.caption(f"LLM: {settings.llm_provider} / {settings.llm_model}")
-    st.caption(f"Embeddings: {settings.embedding_model}")
+    st.caption(f"Embeddings: {settings.embedding_model} + {settings.sparse_model}")
     if st.button("Clear chat"):
         st.session_state.messages = []
 
 
-st.title("📚 Research Analyst")
+st.title("📚 Document Chat")
 st.caption("Ask questions about your documents. Answers cite the passages they use.")
 
 if "messages" not in st.session_state:
@@ -60,7 +64,8 @@ if "messages" not in st.session_state:
 def show_sources(sources: list[dict]) -> None:
     with st.expander(f"Sources ({len(sources)})"):
         for i, src in enumerate(sources, start=1):
-            st.markdown(f"**[{i}] {src['label']}**")
+            score = f" · rerank {src['score']:.3f}" if src.get("score") is not None else ""
+            st.markdown(f"**[{i}] {src['label']}**{score}")
             st.caption(src["text"][:600] + ("…" if len(src["text"]) > 600 else ""))
 
 
@@ -77,9 +82,12 @@ if question := st.chat_input("Ask about your documents…"):
 
     with st.chat_message("assistant"):
         with st.spinner("Searching documents…"):
-            docs = retrieve(question, store())
+            docs = retrieve(question, store(), mode=mode, use_rerank=use_rerank)
         reply = st.write_stream(stream_answer(question, docs))
-        sources = [{"label": source_label(d), "text": d.page_content} for d in docs]
+        sources = [
+            {"label": source_label(d), "text": d.page_content, "score": d.metadata.get("rerank_score")}
+            for d in docs
+        ]
         if sources:
             show_sources(sources)
 
