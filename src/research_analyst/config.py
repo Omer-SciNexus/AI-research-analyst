@@ -47,5 +47,10 @@ class Settings:
     checkpoint_db: Path = _path("CHECKPOINT_DB", "data/checkpoints.sqlite")
     reports_dir: Path = _path("REPORTS_DIR", "data/reports")
 
+    # Stage 4: evaluation + tracing
+    traces_dir: Path = _path("TRACES_DIR", "data/traces")
+    eval_dir: Path = _path("EVAL_DIR", "data/eval")
+    eval_set: Path = _path("EVAL_SET", "samples/eval_set.json")
+
 
 settings = Settings()
