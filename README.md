@@ -10,7 +10,7 @@ An agentic research & report analyst built with **RAG, LangChain, LangGraph** an
 | 1 | Basic RAG: PDF ingestion, local embeddings, Qdrant, Streamlit UI | ⏳ |
 | 2 | Better RAG: hybrid search (BM25 + vector), re-ranker, smart chunking | ✅ |
 | 3 | LangGraph agents: planner / researcher / fact-checker / writer, human-in-the-loop | ✅ |
-| 4 | Evaluation & observability: RAGAS, Langfuse | |
+| 4 | Evaluation & observability: retrieval/answer metrics, LLM judge, local tracing | ✅ |
 | 5 | ML: fine-tuned embeddings / query router / confidence scorer | |
 | 6 | Product: FastAPI + frontend, deploy to Hugging Face Spaces | |
 
@@ -98,6 +98,38 @@ plan ──► review ──► research ×N ──► write ──► fact_chec
 
 Runs are checkpointed in SQLite (`data/checkpoints.sqlite`), so a run paused for review survives an app restart. Reports are saved to `data/reports/`. With `llama3.2:3b` on CPU a run takes a few minutes; switch `LLM_PROVIDER` to Groq/Gemini for speed.
 
+## Stage 4 — Evaluation & tracing
+
+```bash
+uv run python scripts/evaluate.py             # retrieval metrics, ~30 s, no LLM needed
+uv run python scripts/evaluate.py --answers   # + answer quality, several minutes on CPU
+# results and traces: the "Evaluation" page in the app
+```
+
+**Evaluation set** (`samples/eval_set.json`): 15 answerable questions labelled with the section that holds the answer, plus 2 questions the documents can't answer. A distractor document (`samples/rag_glossary.md`) with the same vocabulary but no project facts is indexed alongside, so retrieval has to discriminate. Everything is indexed into a fresh in-memory collection, so runs are reproducible and your own index is untouched.
+
+| Metric | Meaning |
+|---|---|
+| hit@1 / hit@k | the correct chunk is ranked first / anywhere in the top k |
+| MRR | mean of 1 / rank of the correct chunk |
+| keyword recall | share of the expected facts that appear in the answer |
+| citation rate | answers that cite at least one passage |
+| faithfulness | LLM judge: every claim is supported by the retrieved passages |
+| refusal accuracy | unanswerable questions answered with "couldn't find" |
+
+First results (17 questions, top-4, `nomic-embed-text`):
+
+| Setup | hit@1 | hit@4 | MRR | latency |
+|---|---|---|---|---|
+| dense | 0.80 | 1.00 | 0.90 | 72 ms |
+| sparse (BM25) | 0.60 | 0.93 | 0.74 | 36 ms |
+| hybrid | 0.67 | 1.00 | 0.82 | 70 ms |
+| **hybrid + rerank** | **0.87** | **1.00** | **0.93** | 364 ms |
+
+Re-ranking gives the best ranking. Hybrid alone is slightly behind dense on this small, mostly paraphrased set: RRF fusion lets BM25's weaker matches pull good dense hits down, which the re-ranker then repairs. On corpora heavy in exact names, codes and numbers, BM25's contribution grows.
+
+**Tracing**: a LangChain callback (`tracing.py`) appends every top-level run and every LLM call (node, model, latency, input/output tokens) to `data/traces/<date>.jsonl`. LangGraph passes it down to every node, including parallel research tasks. The Evaluation page lists runs, their LLM calls and generation speed. For a hosted dashboard, Langfuse's free cloud tier plugs in by setting `LANGFUSE_*` in `.env` and running `uv add langfuse`; self-hosting Langfuse needs about 2 GB of Docker images, so it isn't the default.
+
 ### Troubleshooting
 
 - **`llama-server process has terminated: exit status 0xc0000005`**: Ollama tried to use an old/unsupported GPU (e.g. GeForce GT 730 via Vulkan). Force CPU by setting the user environment variables `GGML_VK_VISIBLE_DEVICES=-1` and `CUDA_VISIBLE_DEVICES=-1`, then restart Ollama.
@@ -117,7 +149,7 @@ All code calls `research_analyst.llm.get_llm()`; the provider is chosen in `.env
 
 ```
 app.py                  Streamlit UI: document chat (upload + cited answers)
-pages/                  extra app pages (Research Agent)
+pages/                  extra app pages (Research Agent, Evaluation & Traces)
 src/research_analyst/   application package
   config.py             settings from .env
   llm.py                provider-agnostic LLM factory
@@ -128,9 +160,11 @@ src/research_analyst/   application package
   rag.py                retrieve → answer with citations
   agent.py              LangGraph research agent
   web.py                DuckDuckGo search (no API key)
+  evaluation.py         retrieval + answer metrics, LLM judge
+  tracing.py            JSONL tracer (+ optional Langfuse)
   ui.py                 shared Streamlit helpers
-scripts/                runnable entry points (hello_llm, ingest, ask, research)
-samples/                sample document used by tests
+scripts/                runnable entry points (hello_llm, ingest, ask, research, evaluate)
+samples/                sample documents + labelled evaluation set
 tests/                  pytest suite (Ollama tests auto-skip if models are missing)
 data/                   local documents + vector DB (git-ignored)
 notebooks/              experiments
