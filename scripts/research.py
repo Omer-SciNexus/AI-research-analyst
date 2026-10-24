@@ -2,8 +2,11 @@
 
 Usage:
     uv run python scripts/research.py "How does hybrid search improve RAG?"
-    uv run python scripts/research.py --web "What is LangGraph used for?"
+    uv run python scripts/research.py --web always "What is LangGraph used for?"
     uv run python scripts/research.py --yes "..."     # approve the plan automatically
+
+Web modes: off | auto (only when the confidence model says the documents can't
+answer a sub-question; the default) | always.
 
 The agent pauses after planning so you can approve the plan or ask for changes.
 Reports are saved to data/reports/.
@@ -17,7 +20,7 @@ import uuid
 
 from langgraph.types import Command
 
-from research_analyst.agent import ResearchAgent, get_checkpointer, initial_state, run_config
+from research_analyst.agent import WEB_MODES, ResearchAgent, default_web_mode, get_checkpointer, initial_state, run_config
 from research_analyst.config import settings
 from research_analyst.vectorstore import get_vectorstore
 
@@ -33,14 +36,14 @@ def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("question", nargs="+")
-    parser.add_argument("--web", action="store_true", help="also search the web (DuckDuckGo)")
+    parser.add_argument("--web", choices=WEB_MODES, default=default_web_mode(), help="DuckDuckGo web search")
     parser.add_argument("--yes", action="store_true", help="approve the plan without asking")
     args = parser.parse_args()
 
     question = " ".join(args.question)
     graph = ResearchAgent(get_vectorstore()).build(get_checkpointer())
     config = run_config(str(uuid.uuid4()))
-    payload = initial_state(question, use_web=args.web)
+    payload = initial_state(question, web=args.web)
     start = time.perf_counter()
 
     while True:

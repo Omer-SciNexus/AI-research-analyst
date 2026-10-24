@@ -7,7 +7,8 @@
 - plan:       the LLM splits the question into 2-4 sub-questions
 - review:     the graph pauses (interrupt) so a human can approve, edit or reject the plan
 - research:   one task per sub-question (Send fan-out): hybrid search over the documents,
-              optionally DuckDuckGo, then a cited answer
+              plus DuckDuckGo when web mode is "always", or "auto" and the confidence
+              model (Stage 5) says the documents can't answer; then a cited answer
 - write:      merges all sources into one numbered list, renumbers citations and adds an
               executive summary
 - fact_check: checks citations and asks the LLM whether the summary is supported by the
@@ -30,14 +31,15 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Send, interrupt
 from pydantic import BaseModel, Field
 
+from research_analyst.confidence import assess
 from research_analyst.config import settings
 from research_analyst.judge import is_supported, unsupported_claims
 from research_analyst.llm import get_llm, with_retry
 from research_analyst.rag import generate_answer, source_label
-from research_analyst.retrieval import search
 from research_analyst.tracing import get_callbacks
 from research_analyst.web import web_search
 
+WEB_MODES = ("off", "auto", "always")
 MAX_SUB_QUESTIONS = 4
 MAX_REVISIONS = 1
 CITATION = re.compile(r"\[(\d+)\]")
@@ -60,7 +62,7 @@ class Finding(TypedDict):
 
 class ResearchState(TypedDict, total=False):
     question: str
-    use_web: bool
+    web: str  # one of WEB_MODES
     plan: list[str]
     plan_feedback: str
     findings: Annotated[list[Finding], operator.add]
@@ -73,7 +75,7 @@ class ResearchState(TypedDict, total=False):
 
 class ResearchTask(TypedDict):
     sub_question: str
-    use_web: bool
+    web: str
 
 
 # ── Structured LLM outputs ───────────────────────────────────────────────────
@@ -176,9 +178,12 @@ class ResearchAgent:
         except Exception:  # small models sometimes emit invalid JSON: fall back to the question itself
             return []
 
-    def gather(self, sub_question: str, use_web: bool) -> list[Document]:
-        docs = search(sub_question, self.store, k=3)
-        return docs + (web_search(sub_question, k=3) if use_web else [])
+    def gather(self, sub_question: str, web: str) -> list[Document]:
+        assessment = assess(sub_question, self.store)
+        docs = assessment.docs[:3]
+        if web == "always" or (web == "auto" and not assessment.answerable):
+            docs += web_search(sub_question, k=3)
+        return docs
 
     def answer(self, sub_question: str, docs: list[Document]) -> str:
         return generate_answer(sub_question, docs)
@@ -208,11 +213,11 @@ class ResearchAgent:
         if decision.get("action") == "revise":
             return Command(goto="plan", update={"plan_feedback": decision.get("feedback", "")})
         plan = [q.strip() for q in decision.get("plan") or state["plan"] if q.strip()] or state["plan"]
-        tasks = [Send("research", ResearchTask(sub_question=q, use_web=state.get("use_web", False))) for q in plan]
+        tasks = [Send("research", ResearchTask(sub_question=q, web=state.get("web", "off"))) for q in plan]
         return Command(goto=tasks, update={"plan": plan})
 
     def research(self, task: ResearchTask) -> dict:
-        docs = self.gather(task["sub_question"], task["use_web"])
+        docs = self.gather(task["sub_question"], task["web"])
         finding = Finding(
             sub_question=task["sub_question"],
             answer=self.answer(task["sub_question"], docs),
@@ -274,8 +279,15 @@ def get_checkpointer() -> SqliteSaver:
     return SqliteSaver(sqlite3.connect(settings.checkpoint_db, check_same_thread=False))
 
 
-def initial_state(question: str, use_web: bool = False) -> ResearchState:
-    return ResearchState(question=question, use_web=use_web, findings=[], revisions=0, issues=[])
+def default_web_mode() -> str:
+    return "auto" if settings.auto_web_fallback else "off"
+
+
+def initial_state(question: str, web: str | None = None) -> ResearchState:
+    web = web or default_web_mode()
+    if web not in WEB_MODES:
+        raise ValueError(f"web must be one of {WEB_MODES}, got {web!r}")
+    return ResearchState(question=question, web=web, findings=[], revisions=0, issues=[])
 
 
 def run_config(thread_id: str) -> dict:

@@ -5,7 +5,7 @@ import uuid
 import streamlit as st
 from langgraph.types import Command
 
-from research_analyst.agent import initial_state, run_config
+from research_analyst.agent import WEB_MODES, default_web_mode, initial_state, run_config
 from research_analyst.ui import get_research_graph
 
 st.set_page_config(page_title="Research Agent", page_icon="🔬", layout="wide")
@@ -43,10 +43,16 @@ st.caption(
 
 with st.form("start"):
     question = st.text_area("Research question", placeholder="e.g. How does hybrid search improve RAG answers?")
-    use_web = st.toggle("Also search the web (DuckDuckGo)", value=False)
+    web = st.radio(
+        "Web search (DuckDuckGo)",
+        WEB_MODES,
+        index=WEB_MODES.index(default_web_mode()),
+        horizontal=True,
+        format_func={"off": "Off", "auto": "Auto: only when documents can't answer", "always": "Always"}.get,
+    )
     if st.form_submit_button("Plan research", type="primary") and question.strip():
         ss.research_thread = str(uuid.uuid4())
-        run(initial_state(question.strip(), use_web=use_web))
+        run(initial_state(question.strip(), web=web))
 
 if "research_thread" not in ss:
     st.stop()
