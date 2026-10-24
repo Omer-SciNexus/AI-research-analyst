@@ -8,7 +8,7 @@ An agentic research & report analyst built with **RAG, LangChain, LangGraph** an
 |---|---|---|
 | 0 | Setup: local LLM (Ollama), project skeleton, smoke test | ⏳ |
 | 1 | Basic RAG: PDF ingestion, local embeddings, Qdrant, Streamlit UI | ⏳ |
-| 2 | Better RAG: hybrid search (BM25 + vector), re-ranker, smart chunking | |
+| 2 | Better RAG: hybrid search (BM25 + vector), re-ranker, smart chunking | ✅ |
 | 3 | LangGraph agents: planner / researcher / fact-checker / writer, human-in-the-loop | |
 | 4 | Evaluation & observability: RAGAS, Langfuse | |
 | 5 | ML: fine-tuned embeddings / query router / confidence scorer | |
@@ -58,6 +58,22 @@ How it works:
 
 > Qdrant local mode locks its folder: stop the Streamlit app before running `scripts/ingest.py` or `scripts/ask.py`.
 
+## Stage 2 — Better retrieval
+
+```bash
+# Rebuild the index after upgrading from Stage 1 (adds BM25 vectors)
+uv run python scripts/ingest.py --reset samples data/docs
+
+# Compare search modes from the command line
+uv run python scripts/ask.py --mode dense --no-rerank "How many dimensions do the vectors have?"
+uv run python scripts/ask.py --mode hybrid "How many dimensions do the vectors have?"
+```
+
+- **Hybrid search**: each chunk is stored with a dense vector (meaning) and a sparse BM25 vector (exact keywords; Qdrant applies IDF). Hybrid mode fuses both result lists with Reciprocal Rank Fusion inside Qdrant. Modes: `dense`, `sparse`, `hybrid` (default).
+- **Re-ranking**: the top 20 fused candidates are re-scored by a cross-encoder (`ms-marco-MiniLM-L-12-v2` via FlashRank, ONNX on CPU, ~34 MB, ~0.1 s) and the best 4 are kept.
+- **Section-aware chunking**: Markdown is split on headings first, so a chunk never mixes two sections; continuation chunks are prefixed with their section path (`[Guide > Setup]`) so they stay findable. Citations show the section (`handbook.md › Setup`) or PDF page.
+- Search mode and re-ranking can be toggled in the app sidebar.
+
 ### Troubleshooting
 
 - **`llama-server process has terminated: exit status 0xc0000005`**: Ollama tried to use an old/unsupported GPU (e.g. GeForce GT 730 via Vulkan). Force CPU by setting the user environment variables `GGML_VK_VISIBLE_DEVICES=-1` and `CUDA_VISIBLE_DEVICES=-1`, then restart Ollama.
@@ -81,9 +97,11 @@ src/research_analyst/   application package
   config.py             settings from .env
   llm.py                provider-agnostic LLM factory
   embeddings.py         Ollama embeddings with nomic task prefixes
-  vectorstore.py        Qdrant local-mode store helpers
-  ingest.py             load → split → index
+  vectorstore.py        Qdrant local-mode store (dense + BM25 vectors)
+  retrieval.py          dense / sparse / hybrid search + re-ranking
+  ingest.py             load → section-aware split → index
   rag.py                retrieve → answer with citations
+  ui.py                 shared Streamlit helpers
 scripts/                runnable entry points (hello_llm, ingest, ask)
 samples/                sample document used by tests
 tests/                  pytest suite (Ollama tests auto-skip if models are missing)
