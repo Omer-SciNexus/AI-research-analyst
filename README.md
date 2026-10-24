@@ -9,7 +9,7 @@ An agentic research & report analyst built with **RAG, LangChain, LangGraph** an
 | 0 | Setup: local LLM (Ollama), project skeleton, smoke test | ⏳ |
 | 1 | Basic RAG: PDF ingestion, local embeddings, Qdrant, Streamlit UI | ⏳ |
 | 2 | Better RAG: hybrid search (BM25 + vector), re-ranker, smart chunking | ✅ |
-| 3 | LangGraph agents: planner / researcher / fact-checker / writer, human-in-the-loop | |
+| 3 | LangGraph agents: planner / researcher / fact-checker / writer, human-in-the-loop | ✅ |
 | 4 | Evaluation & observability: RAGAS, Langfuse | |
 | 5 | ML: fine-tuned embeddings / query router / confidence scorer | |
 | 6 | Product: FastAPI + frontend, deploy to Hugging Face Spaces | |
@@ -74,6 +74,30 @@ uv run python scripts/ask.py --mode hybrid "How many dimensions do the vectors h
 - **Section-aware chunking**: Markdown is split on headings first, so a chunk never mixes two sections; continuation chunks are prefixed with their section path (`[Guide > Setup]`) so they stay findable. Citations show the section (`handbook.md › Setup`) or PDF page.
 - Search mode and re-ranking can be toggled in the app sidebar.
 
+## Stage 3 — Research agent (LangGraph)
+
+```bash
+uv run python scripts/research.py "How does hybrid search improve RAG?"
+uv run python scripts/research.py --web "What is LangGraph used for?"
+# or open the "Research Agent" page in the app
+```
+
+```
+plan ──► review ──► research ×N ──► write ──► fact_check ──► END
+ ▲         │ (human)   (parallel)     ▲            │
+ └─────────┘ revise                   └────────────┘ unsupported claims (1 retry)
+```
+
+| Node | What it does |
+|---|---|
+| `plan` | LLM splits the question into 2–4 sub-questions (structured output) |
+| `review` | **Human-in-the-loop**: the graph pauses with `interrupt()`; approve, edit the sub-questions, or send feedback to re-plan |
+| `research` | One parallel task per sub-question (`Send` fan-out): hybrid search + re-rank over your documents, optionally DuckDuckGo snippets, then a cited answer |
+| `write` | Merges and de-duplicates all sources into one numbered list, renumbers every citation, adds an executive summary |
+| `fact_check` | Validates citation numbers, then an LLM judge checks the summary against the cited passages; unsupported claims send it back to `write` once |
+
+Runs are checkpointed in SQLite (`data/checkpoints.sqlite`), so a run paused for review survives an app restart. Reports are saved to `data/reports/`. With `llama3.2:3b` on CPU a run takes a few minutes; switch `LLM_PROVIDER` to Groq/Gemini for speed.
+
 ### Troubleshooting
 
 - **`llama-server process has terminated: exit status 0xc0000005`**: Ollama tried to use an old/unsupported GPU (e.g. GeForce GT 730 via Vulkan). Force CPU by setting the user environment variables `GGML_VK_VISIBLE_DEVICES=-1` and `CUDA_VISIBLE_DEVICES=-1`, then restart Ollama.
@@ -92,7 +116,8 @@ All code calls `research_analyst.llm.get_llm()`; the provider is chosen in `.env
 ## Project layout
 
 ```
-app.py                  Streamlit UI (upload + chat)
+app.py                  Streamlit UI: document chat (upload + cited answers)
+pages/                  extra app pages (Research Agent)
 src/research_analyst/   application package
   config.py             settings from .env
   llm.py                provider-agnostic LLM factory
@@ -101,8 +126,10 @@ src/research_analyst/   application package
   retrieval.py          dense / sparse / hybrid search + re-ranking
   ingest.py             load → section-aware split → index
   rag.py                retrieve → answer with citations
+  agent.py              LangGraph research agent
+  web.py                DuckDuckGo search (no API key)
   ui.py                 shared Streamlit helpers
-scripts/                runnable entry points (hello_llm, ingest, ask)
+scripts/                runnable entry points (hello_llm, ingest, ask, research)
 samples/                sample document used by tests
 tests/                  pytest suite (Ollama tests auto-skip if models are missing)
 data/                   local documents + vector DB (git-ignored)
