@@ -2,11 +2,14 @@
 
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_qdrant import QdrantVectorStore
 
+from research_analyst.confidence import assess
+from research_analyst.config import settings
 from research_analyst.llm import RETRYABLE_ERRORS, get_llm, with_retry
 from research_analyst.retrieval import search
 from research_analyst.tracing import get_callbacks
@@ -45,6 +48,34 @@ def format_context(docs: list[Document]) -> str:
 def retrieve(question: str, store: QdrantVectorStore, **search_options) -> list[Document]:
     """Hybrid search + re-ranking by default; see retrieval.search for options."""
     return search(question, store, **search_options)
+
+
+@dataclass
+class PreparedTurn:
+    docs: list[Document]
+    confidence: float | None  # P(documents can answer), None if no model is trained
+    threshold: float | None
+    skip_llm: bool  # confidence too low: reply "not found" without calling the LLM
+
+
+def prepare(
+    question: str,
+    store: QdrantVectorStore,
+    mode: str | None = None,
+    use_rerank: bool | None = None,
+    skip_low_confidence: bool | None = None,
+) -> PreparedTurn:
+    """Retrieve passages and score answerability (Stage 5) before any LLM call."""
+    assessment = assess(question, store)  # hybrid + re-rank search, the default setup
+    default_setup = (mode or settings.retrieval_mode) == "hybrid" and (settings.rerank if use_rerank is None else use_rerank)
+    docs = assessment.docs if default_setup else retrieve(question, store, mode=mode, use_rerank=use_rerank)
+    skip = settings.skip_low_confidence if skip_low_confidence is None else skip_low_confidence
+    return PreparedTurn(
+        docs=docs,
+        confidence=assessment.confidence,
+        threshold=assessment.threshold,
+        skip_llm=skip and not assessment.answerable,
+    )
 
 
 def _inputs(question: str, docs: list[Document]) -> dict:

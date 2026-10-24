@@ -1,13 +1,14 @@
-"""Document chat: upload documents and chat with them (Stages 1-2).
+"""Document chat: upload documents and chat with them (Stages 1, 2 and 5).
 
 Run:  uv run streamlit run app.py
 """
 
 import streamlit as st
 
+from research_analyst.confidence import load_model
 from research_analyst.config import settings
 from research_analyst.ingest import SUPPORTED_SUFFIXES, ingest_file
-from research_analyst.rag import retrieve, source_label, stream_answer
+from research_analyst.rag import NOT_FOUND, prepare, source_label, stream_answer
 from research_analyst.ui import get_store as store
 from research_analyst.vectorstore import MODES, list_sources
 
@@ -47,6 +48,18 @@ with st.sidebar:
     )
     use_rerank = st.toggle("Re-rank results", value=settings.rerank, help=f"Cross-encoder: {settings.reranker_model}")
 
+    st.subheader("🎯 Confidence model")
+    model = load_model()
+    if model:
+        skip_low = st.toggle(
+            "Skip the LLM when documents can't answer",
+            value=settings.skip_low_confidence,
+            help=f"{model.name}, threshold {model.threshold}: replies 'not found' instantly instead of generating",
+        )
+    else:
+        skip_low = False
+        st.caption("Not trained yet: `uv run python scripts/train_confidence.py`")
+
     st.divider()
     st.caption(f"LLM: {settings.llm_provider} / {settings.llm_model}")
     st.caption(f"Embeddings: {settings.embedding_model} + {settings.sparse_model}")
@@ -69,9 +82,18 @@ def show_sources(sources: list[dict]) -> None:
             st.caption(src["text"][:600] + ("…" if len(src["text"]) > 600 else ""))
 
 
+def confidence_note(turn) -> str:
+    if turn.confidence is None:
+        return ""
+    verdict = "documents can likely answer" if turn.confidence >= turn.threshold else "documents likely can't answer"
+    return f"🎯 Confidence {turn.confidence:.2f} — {verdict}" + (" · LLM skipped" if turn.skip_llm else "")
+
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        if message.get("note"):
+            st.caption(message["note"])
         if message.get("sources"):
             show_sources(message["sources"])
 
@@ -82,13 +104,20 @@ if question := st.chat_input("Ask about your documents…"):
 
     with st.chat_message("assistant"):
         with st.spinner("Searching documents…"):
-            docs = retrieve(question, store(), mode=mode, use_rerank=use_rerank)
-        reply = st.write_stream(stream_answer(question, docs))
+            turn = prepare(question, store(), mode=mode, use_rerank=use_rerank, skip_low_confidence=skip_low)
+        if turn.skip_llm:
+            reply = NOT_FOUND
+            st.markdown(reply)
+        else:
+            reply = st.write_stream(stream_answer(question, turn.docs))
+        note = confidence_note(turn)
+        if note:
+            st.caption(note)
         sources = [
             {"label": source_label(d), "text": d.page_content, "score": d.metadata.get("rerank_score")}
-            for d in docs
+            for d in turn.docs
         ]
         if sources:
             show_sources(sources)
 
-    st.session_state.messages.append({"role": "assistant", "content": reply, "sources": sources})
+    st.session_state.messages.append({"role": "assistant", "content": reply, "note": note, "sources": sources})
