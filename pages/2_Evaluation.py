@@ -53,14 +53,16 @@ with tab_eval:
 
         if answers := results.get("answers"):
             st.subheader(f"Answers ({answers['setup']})")
-            cols = st.columns(5)
-            for col, (label, key) in zip(
-                cols,
-                [("Keyword recall", "keyword_recall"), ("Citation rate", "citation_rate"),
-                 ("Faithfulness", "faithfulness"), ("Refusal accuracy", "refusal_accuracy"),
-                 ("Latency (s)", "latency_s")],
-            ):
-                col.metric(label, "—" if answers[key] is None else answers[key])
+            metrics = [
+                ("Keyword recall", "keyword_recall", "expected facts found in the answer"),
+                ("Citation rate", "citation_rate", "answers citing at least one passage"),
+                ("Grounding", "grounding", "answer content words found in the passages (no LLM)"),
+                ("Faithfulness", "faithfulness", f"LLM judge ({config.get('judge_model', '?')}); a 3B judge is unreliable"),
+                ("Refusal accuracy", "refusal_accuracy", "unanswerable questions correctly refused"),
+                ("Latency (s)", "latency_s", "retrieval + answer per question"),
+            ]
+            for col, (label, key, help_text) in zip(st.columns(len(metrics)), metrics):
+                col.metric(label, "—" if answers.get(key) is None else answers[key], help=help_text)
             st.dataframe(pd.DataFrame(answers["rows"]), width="stretch", hide_index=True)
 
 with tab_traces:
