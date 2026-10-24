@@ -42,5 +42,10 @@ class Settings:
     reranker_model: str = os.getenv("RERANKER_MODEL", "ms-marco-MiniLM-L-12-v2")
     models_dir: Path = _path("MODELS_DIR", "data/models")
 
+    # Stage 3: research agent
+    ollama_num_ctx: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+    checkpoint_db: Path = _path("CHECKPOINT_DB", "data/checkpoints.sqlite")
+    reports_dir: Path = _path("REPORTS_DIR", "data/reports")
+
 
 settings = Settings()

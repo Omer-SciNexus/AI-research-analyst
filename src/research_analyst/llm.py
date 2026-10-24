@@ -19,6 +19,8 @@ def get_llm(
     kwargs = {}
     if provider == "ollama":
         kwargs["base_url"] = settings.ollama_base_url
+        # Room for several retrieved passages; Ollama's default window is smaller.
+        kwargs["num_ctx"] = settings.ollama_num_ctx
 
     return init_chat_model(
         model or settings.llm_model,
