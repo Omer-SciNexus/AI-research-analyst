@@ -5,13 +5,14 @@ from pathlib import Path
 
 from langchain_core.documents import Document
 from langchain_qdrant import QdrantVectorStore
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 from research_analyst.config import settings
 from research_analyst.vectorstore import delete_source
 
 SUPPORTED_SUFFIXES = {".pdf", ".md", ".txt"}
+MARKDOWN_HEADERS = [("#", "h1"), ("##", "h2"), ("###", "h3")]
 
 
 def load_file(path: Path) -> list[Document]:
@@ -28,13 +29,33 @@ def load_file(path: Path) -> list[Document]:
     return [Document(page_content=text, metadata={"source": path.name})] if text else []
 
 
+def split_markdown_sections(doc: Document) -> list[Document]:
+    """Split Markdown on headings so chunks never straddle two sections."""
+    splitter = MarkdownHeaderTextSplitter(MARKDOWN_HEADERS, strip_headers=False)
+    sections = []
+    for part in splitter.split_text(doc.page_content):
+        metadata = dict(doc.metadata)
+        if path := " > ".join(part.metadata[key] for _, key in MARKDOWN_HEADERS if key in part.metadata):
+            metadata["section"] = path
+        sections.append(Document(page_content=part.page_content, metadata=metadata))
+    return sections
+
+
 def split_documents(docs: list[Document]) -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
         add_start_index=True,
     )
-    chunks = splitter.split_documents(docs)
+    chunks = []
+    for doc in docs:
+        is_markdown = doc.metadata.get("source", "").lower().endswith(".md")
+        for chunk in splitter.split_documents(split_markdown_sections(doc) if is_markdown else [doc]):
+            # Continuation chunks lose their heading; prefix the section path so they stay findable.
+            section = chunk.metadata.get("section")
+            if section and not chunk.page_content.lstrip().startswith("#"):
+                chunk.page_content = f"[{section}]\n{chunk.page_content}"
+            chunks.append(chunk)
     for index, chunk in enumerate(chunks):
         chunk.metadata["chunk"] = index
     return chunks
