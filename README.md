@@ -162,10 +162,13 @@ All code calls `research_analyst.llm.get_llm()`; the provider is chosen in `.env
 ```
 app.py                  Streamlit UI: document chat (upload + cited answers)
 pages/                  extra app pages (Research Agent, Evaluation & Traces)
+web/index.html          no-build web UI served by the API
+Dockerfile              API + web UI image (Hugging Face Spaces)
+.github/workflows/      CI: tests on every push
 src/research_analyst/   application package
   config.py             settings from .env
-  llm.py                provider-agnostic LLM factory
-  embeddings.py         Ollama embeddings with nomic task prefixes
+  llm.py                provider-agnostic LLM factory (+ retries, timeouts)
+  embeddings.py         Ollama or fastembed embeddings with nomic task prefixes
   vectorstore.py        Qdrant local-mode store (dense + BM25 vectors)
   retrieval.py          dense / sparse / hybrid search + re-ranking
   ingest.py             load → section-aware split → index
@@ -175,9 +178,14 @@ src/research_analyst/   application package
   evaluation.py         retrieval + answer metrics
   judge.py              YES/NO LLM judge (evaluation + agent fact-check)
   tracing.py            JSONL tracer (+ optional Langfuse)
+  confidence.py         answerability model: features, training, inference
+  ml_data.py            training-set generation for the confidence model
+  text.py               shared text helpers
+  api.py                FastAPI backend
   ui.py                 shared Streamlit helpers
-scripts/                runnable entry points (hello_llm, ingest, ask, research, evaluate)
-samples/                sample documents + labelled evaluation set
+scripts/                entry points: hello_llm, ingest, ask, research, evaluate,
+                        make_ml_dataset, train_confidence, warmup, deploy_space
+samples/                sample documents, labelled evaluation set, ML negatives
 tests/                  pytest suite (Ollama tests auto-skip if models are missing)
 data/                   local documents + vector DB (git-ignored)
 notebooks/              experiments
