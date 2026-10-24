@@ -6,6 +6,7 @@ from research_analyst.evaluation import (
     first_relevant_rank,
     is_refusal,
     is_relevant,
+    lexical_grounding,
     load_eval_set,
 )
 from research_analyst.tracing import JsonlTracer, load_records
@@ -32,6 +33,13 @@ def test_first_relevant_rank():
 def test_refusal_detection():
     assert is_refusal("I couldn't find this in the indexed documents.")
     assert not is_refusal("The chunk size is 1000 characters [1].")
+
+
+def test_lexical_grounding_penalises_invented_words():
+    docs = [Document(page_content="The model produces 768-dimensional vectors stored in Qdrant.")]
+    assert lexical_grounding("According to [1], the vectors have 768 dimensions.", docs) > 0.6
+    assert lexical_grounding("The vectors live in Pinecone with 1536 dimensions [1].", docs) < 0.5
+    assert lexical_grounding("[1]", docs) is None
 
 
 def test_eval_set_is_well_formed():
