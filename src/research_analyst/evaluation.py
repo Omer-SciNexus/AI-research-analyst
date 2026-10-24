@@ -27,6 +27,7 @@ from research_analyst.ingest import ingest_file
 from research_analyst.judge import is_supported
 from research_analyst.rag import NOT_FOUND, format_context, generate_answer
 from research_analyst.retrieval import search
+from research_analyst.text import content_words, coverage
 from research_analyst.vectorstore import build_vectorstore
 
 SETUPS = {
@@ -98,27 +99,14 @@ def judge_faithfulness(answer: str, docs: list[Document]) -> bool | None:
     return is_supported(answer, format_context(docs))
 
 
-STOPWORDS = set(
-    "the a an and or but of to in on at for by with from as is are was were be been it its this that these "
-    "those which who what when where why how does do did can could will would should may might has have had "
-    "not no yes than then so such into over about each every only also very more most other their there they "
-    "them his her our your we you i according states stated passage passages context answer".split()
-)
-WORD = re.compile(r"[a-z0-9][a-z0-9_./-]*")
-
-
 def lexical_grounding(answer: str, docs: list[Document]) -> float | None:
     """Share of the answer's content words that appear in the retrieved passages.
 
     A cheap, judge-free proxy for faithfulness: invented facts bring in words the
     passages don't contain.
     """
-    words = [w.strip("./-") for w in WORD.findall(CITATION.sub(" ", answer.lower()))]
-    content = [w for w in words if len(w) > 2 and w not in STOPWORDS]
-    if not content:
-        return None
-    passages = " ".join(d.page_content.lower() for d in docs)
-    return round(mean(float(w in passages) for w in content), 3)
+    share = coverage(content_words(answer), " ".join(d.page_content for d in docs))
+    return None if share is None else round(share, 3)
 
 
 def is_refusal(answer: str) -> bool:
