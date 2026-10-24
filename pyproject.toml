@@ -5,12 +5,14 @@ description = "Agentic research & report analyst built with RAG, LangChain and L
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "ddgs>=9.0",
     "fastembed>=0.5",
     "flashrank>=0.2",
     "langchain>=1.0",
     "langchain-ollama>=1.0",
     "langchain-qdrant>=0.2",
     "langchain-text-splitters>=1.0",
+    "langgraph-checkpoint-sqlite>=2.0",
     "pypdf>=5.0",
     "python-dotenv>=1.0",
     "streamlit>=1.40",
