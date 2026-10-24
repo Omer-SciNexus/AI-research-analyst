@@ -28,8 +28,8 @@ def main() -> None:
         print(f"  {setup:<18}" + "".join(f"{scores[m]:>12.3f}" if isinstance(scores[m], float) else f"{scores[m]:>12}" for m in metrics))
 
     if answers := results.get("answers"):
-        print(f"\nAnswers ({answers['setup']}):\n")
-        for key in ["keyword_recall", "citation_rate", "faithfulness", "refusal_accuracy", "latency_s"]:
+        print(f"\nAnswers ({answers['setup']}, judge: {results['config']['judge_model']}):\n")
+        for key in ["keyword_recall", "citation_rate", "grounding", "faithfulness", "refusal_accuracy", "latency_s"]:
             print(f"  {key:<18}{answers[key]}")
 
     print(f"\n[saved to {save_results(results)}]")

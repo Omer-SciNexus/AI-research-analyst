@@ -19,15 +19,13 @@ from pathlib import Path
 from statistics import mean
 
 from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_qdrant import QdrantVectorStore
-from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 
 from research_analyst.config import PROJECT_ROOT, settings
 from research_analyst.ingest import ingest_file
-from research_analyst.llm import get_llm
-from research_analyst.rag import NOT_FOUND, format_context, stream_answer
+from research_analyst.judge import is_supported
+from research_analyst.rag import NOT_FOUND, format_context, generate_answer
 from research_analyst.retrieval import search
 from research_analyst.vectorstore import build_vectorstore
 
@@ -96,27 +94,31 @@ def evaluate_retrieval(store: QdrantVectorStore, cases: list[EvalCase], k: int |
     return results
 
 
-class Faithfulness(BaseModel):
-    faithful: bool = Field(description="true only if every claim in the answer is supported by the passages")
-    unsupported_claims: list[str] = Field(default_factory=list)
-
-
-JUDGE_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        ("system", "You are a strict grader. Is every claim in the ANSWER supported by the PASSAGES? Ignore style."),
-        ("human", "PASSAGES:\n\n{context}\n\nANSWER:\n{answer}"),
-    ]
-)
-
-
 def judge_faithfulness(answer: str, docs: list[Document]) -> bool | None:
-    try:
-        verdict = (JUDGE_PROMPT | get_llm(temperature=0).with_structured_output(Faithfulness)).invoke(
-            {"context": format_context(docs), "answer": answer}
-        )
-        return verdict.faithful
-    except Exception:  # judge produced invalid JSON
+    return is_supported(answer, format_context(docs))
+
+
+STOPWORDS = set(
+    "the a an and or but of to in on at for by with from as is are was were be been it its this that these "
+    "those which who what when where why how does do did can could will would should may might has have had "
+    "not no yes than then so such into over about each every only also very more most other their there they "
+    "them his her our your we you i according states stated passage passages context answer".split()
+)
+WORD = re.compile(r"[a-z0-9][a-z0-9_./-]*")
+
+
+def lexical_grounding(answer: str, docs: list[Document]) -> float | None:
+    """Share of the answer's content words that appear in the retrieved passages.
+
+    A cheap, judge-free proxy for faithfulness: invented facts bring in words the
+    passages don't contain.
+    """
+    words = [w.strip("./-") for w in WORD.findall(CITATION.sub(" ", answer.lower()))]
+    content = [w for w in words if len(w) > 2 and w not in STOPWORDS]
+    if not content:
         return None
+    passages = " ".join(d.page_content.lower() for d in docs)
+    return round(mean(float(w in passages) for w in content), 3)
 
 
 def is_refusal(answer: str) -> bool:
@@ -129,13 +131,15 @@ def evaluate_answers(store: QdrantVectorStore, cases: list[EvalCase], setup: str
     for case in cases:
         start = time.perf_counter()
         docs = search(case.question, store, **SETUPS[setup])
-        answer = "".join(stream_answer(case.question, docs))
+        answer = generate_answer(case.question, docs)
         row = {"question": case.question, "answer": answer, "latency_s": round(time.perf_counter() - start, 1)}
         if case.answerable:
             lowered = answer.lower()
             row["keyword_recall"] = mean(kw.lower() in lowered for kw in case.keywords) if case.keywords else None
             row["cited"] = bool(CITATION.search(answer))
-            row["faithful"] = None if is_refusal(answer) else judge_faithfulness(answer, docs)
+            refused = is_refusal(answer)
+            row["grounding"] = None if refused else lexical_grounding(answer, docs)
+            row["faithful"] = None if refused else judge_faithfulness(answer, docs)
         else:
             row["refused"] = is_refusal(answer)
         rows.append(row)
@@ -148,6 +152,7 @@ def evaluate_answers(store: QdrantVectorStore, cases: list[EvalCase], setup: str
         "setup": setup,
         "keyword_recall": avg("keyword_recall"),
         "citation_rate": avg("cited"),
+        "grounding": avg("grounding"),
         "faithfulness": avg("faithful"),
         "refusal_accuracy": avg("refused"),
         "latency_s": avg("latency_s"),
@@ -186,6 +191,7 @@ class EvalConfig:
 
     embedding_model: str = settings.embedding_model
     llm_model: str = settings.llm_model
+    judge_model: str = f"{settings.judge_provider}/{settings.judge_model}"
     reranker_model: str = settings.reranker_model
     chunk_size: int = settings.chunk_size
     chunk_overlap: int = settings.chunk_overlap
