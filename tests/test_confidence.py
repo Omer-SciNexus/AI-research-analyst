@@ -68,6 +68,15 @@ def test_negatives_file_has_off_topic_and_near_miss_questions():
     assert any("Qdrant" in q for q in negatives) and any("pizza" in q for q in negatives)
 
 
+def test_negatives_are_never_indexed_with_the_samples():
+    from research_analyst.config import PROJECT_ROOT
+    from research_analyst.ingest import find_files
+    from research_analyst.ml_data import NEGATIVES_FILE
+
+    # An indexed copy of the "unanswerable" questions would make them answerable.
+    assert NEGATIVES_FILE.resolve() not in {p.resolve() for p in find_files(PROJECT_ROOT / "samples")}
+
+
 @needs_embeddings
 def test_extract_features_returns_every_feature():
     from test_rag import SAMPLE
