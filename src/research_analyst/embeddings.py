@@ -1,4 +1,6 @@
-"""Local embeddings served by Ollama."""
+"""Dense embeddings: Ollama locally, or fastembed (ONNX, no server) for deployment."""
+
+from functools import lru_cache
 
 import httpx
 from langchain_core.embeddings import Embeddings
@@ -17,6 +19,21 @@ _retry = retry(
 )
 
 
+class FastEmbedDense(Embeddings):
+    """fastembed's ONNX models (CPU, no server) - used where Ollama isn't available, e.g. a Space."""
+
+    def __init__(self, model: str):
+        from fastembed import TextEmbedding
+
+        self._model = TextEmbedding(model_name=model, cache_dir=str(settings.models_dir))
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [vector.tolist() for vector in self._model.embed(texts)]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+
 class PrefixedEmbeddings(Embeddings):
     """Adds the task prefixes nomic-embed-text was trained with.
 
@@ -25,9 +42,9 @@ class PrefixedEmbeddings(Embeddings):
     Other models are passed through unchanged.
     """
 
-    def __init__(self, model: str, base_url: str):
-        self._inner = OllamaEmbeddings(model=model, base_url=base_url)
-        self._use_prefix = model.startswith("nomic-embed-text")
+    def __init__(self, inner: Embeddings, use_prefix: bool):
+        self._inner = inner
+        self._use_prefix = use_prefix
 
     @_retry
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -42,5 +59,11 @@ class PrefixedEmbeddings(Embeddings):
         return self._inner.embed_query(text)
 
 
+@lru_cache
 def get_embeddings() -> Embeddings:
-    return PrefixedEmbeddings(settings.embedding_model, settings.ollama_base_url)
+    model = settings.embedding_model
+    if settings.embedding_provider == "fastembed":
+        inner = FastEmbedDense(model)
+    else:
+        inner = OllamaEmbeddings(model=model, base_url=settings.ollama_base_url, client_kwargs={"timeout": 60})
+    return PrefixedEmbeddings(inner, use_prefix="nomic-embed-text" in model)

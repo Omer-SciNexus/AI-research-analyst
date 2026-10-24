@@ -30,6 +30,8 @@ def get_llm(
         kwargs["base_url"] = settings.ollama_base_url
         # Room for several retrieved passages; Ollama's default window is smaller.
         kwargs["num_ctx"] = settings.ollama_num_ctx
+        # A crashed-but-not-exited server never answers; time out so the call is retried.
+        kwargs["client_kwargs"] = {"timeout": settings.ollama_timeout}
 
     return init_chat_model(
         model or settings.llm_model,

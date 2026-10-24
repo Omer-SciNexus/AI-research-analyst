@@ -9,8 +9,6 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 load_dotenv(PROJECT_ROOT / ".env")
-# Windows without Developer Mode can't symlink; the HF cache still works, just warns loudly.
-os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
 def _path(name: str, default: str) -> Path:
@@ -24,6 +22,7 @@ class Settings:
     llm_model: str = os.getenv("LLM_MODEL", "llama3.2:3b")
     llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.2"))
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "ollama")  # ollama | fastembed
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 
     # RAG
@@ -44,6 +43,7 @@ class Settings:
 
     # Stage 3: research agent
     ollama_num_ctx: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+    ollama_timeout: float = float(os.getenv("OLLAMA_TIMEOUT", "300"))  # seconds per LLM request
     checkpoint_db: Path = _path("CHECKPOINT_DB", "data/checkpoints.sqlite")
     reports_dir: Path = _path("REPORTS_DIR", "data/reports")
 

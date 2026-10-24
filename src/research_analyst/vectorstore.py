@@ -51,11 +51,20 @@ def _create_collection(client: QdrantClient, collection_name: str) -> None:
 def build_vectorstore(client: QdrantClient, collection_name: str, mode: str = "hybrid") -> QdrantVectorStore:
     if not client.collection_exists(collection_name):
         _create_collection(client, collection_name)
-    elif not client.get_collection(collection_name).config.params.sparse_vectors:
-        raise RuntimeError(
-            f"Collection '{collection_name}' was built before hybrid search was added. "
-            "Rebuild it with: uv run python scripts/ingest.py --reset"
-        )
+    else:
+        params = client.get_collection(collection_name).config.params
+        if not params.sparse_vectors:
+            raise RuntimeError(
+                f"Collection '{collection_name}' was built before hybrid search was added. "
+                "Rebuild it with: uv run python scripts/ingest.py --reset"
+            )
+        dim = len(get_embeddings().embed_query("dimension probe"))
+        if params.vectors[DENSE_VECTOR].size != dim:
+            raise RuntimeError(
+                f"Collection '{collection_name}' was built with {params.vectors[DENSE_VECTOR].size}-dim embeddings "
+                f"but {settings.embedding_model} produces {dim}. Rebuild it with: "
+                "uv run python scripts/ingest.py --reset"
+            )
     return _view(client, collection_name, mode)
 
 
