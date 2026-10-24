@@ -1,0 +1,23 @@
+{
+  "description": "Labelled questions about samples/rag_handbook.md; samples/rag_glossary.md is indexed too as a distractor with overlapping vocabulary. `section` is the heading whose chunk holds the answer (null = not answerable from the documents); `keywords` must appear in a correct answer.",
+  "documents": ["samples/rag_handbook.md", "samples/rag_glossary.md"],
+  "cases": [
+    {"question": "What are the two steps of retrieval-augmented generation?", "source": "rag_handbook.md", "section": "What RAG is", "keywords": ["retriev", "passages"]},
+    {"question": "Why does RAG hallucinate less than a plain language model?", "source": "rag_handbook.md", "section": "What RAG is", "keywords": ["ground"]},
+    {"question": "What chunk size and overlap does the project use?", "source": "rag_handbook.md", "section": "Chunking", "keywords": ["1000", "150"]},
+    {"question": "How long is each piece of text before it gets indexed?", "source": "rag_handbook.md", "section": "Chunking", "keywords": ["1000"]},
+    {"question": "Why do neighbouring chunks share some text?", "source": "rag_handbook.md", "section": "Chunking", "keywords": ["boundary"]},
+    {"question": "How are PDF files read so citations can show a page?", "source": "rag_handbook.md", "section": "Chunking", "keywords": ["page"]},
+    {"question": "How many dimensions do the embedding vectors have?", "source": "rag_handbook.md", "section": "Embeddings", "keywords": ["768"]},
+    {"question": "Which prefixes does nomic-embed-text expect?", "source": "rag_handbook.md", "section": "Embeddings", "keywords": ["search_document", "search_query"]},
+    {"question": "Where on disk are the vectors kept?", "source": "rag_handbook.md", "section": "Vector store", "keywords": ["data/qdrant"]},
+    {"question": "Why was Qdrant picked over Chroma?", "source": "rag_handbook.md", "section": "Vector store", "keywords": ["smaller", "hybrid"]},
+    {"question": "How many passages does the retriever hand to the model per question?", "source": "rag_handbook.md", "section": "Retrieval and answering", "keywords": ["4"]},
+    {"question": "Which language model writes the answers by default?", "source": "rag_handbook.md", "section": "Retrieval and answering", "keywords": ["llama3.2"]},
+    {"question": "What does the system say when the passages lack the answer?", "source": "rag_handbook.md", "section": "Retrieval and answering", "keywords": ["could not find"]},
+    {"question": "What will Stage 3 add to the project?", "source": "rag_handbook.md", "section": "Roadmap", "keywords": ["langgraph"]},
+    {"question": "Which tools measure quality and trace runs in Stage 4?", "source": "rag_handbook.md", "section": "Roadmap", "keywords": ["ragas", "langfuse"]},
+    {"question": "How much does a Qdrant Cloud subscription cost per month?", "source": null, "section": null, "keywords": []},
+    {"question": "Who founded the company that makes Ollama?", "source": null, "section": null, "keywords": []}
+  ]
+}
