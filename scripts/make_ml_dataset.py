@@ -1,8 +1,8 @@
 """Build the confidence-model training set (Stage 5).
 
 Indexes samples/ and data/docs into a fresh in-memory collection, asks the LLM for
-questions about every chunk, adds samples/ml_negatives.txt, and computes retrieval
-features for each question. ~10 minutes with llama3.2:3b on CPU.
+questions about every chunk, adds datasets/ml_negatives.txt, and computes retrieval
+features for each question. ~15-30 minutes with llama3.2:3b on CPU.
 
 Usage:
     uv run python scripts/make_ml_dataset.py
@@ -27,7 +27,7 @@ def main() -> None:
     files = find_files(PROJECT_ROOT / "samples") + find_files(settings.docs_dir)
     for file in files:
         ingest_file(file, store)
-    print(f"Indexed {len(files)} files.")
+    print(f"Indexed {len(files)} files: {', '.join(f.name for f in files)}")
 
     positives = []
     for row in positive_questions(store):

@@ -4,6 +4,9 @@ Answerable questions (label 1) are written by the LLM from each indexed chunk, s
 they cover whatever documents you index. Unanswerable ones (label 0) come from
 samples/ml_negatives.txt: off-topic questions plus near misses that use the same
 vocabulary as the documents. Every question is then turned into retrieval features.
+
+The negatives live in datasets/, not samples/: anything in samples/ gets indexed, and
+an indexed copy of the "unanswerable" questions would make them trivially answerable.
 """
 
 import json
@@ -19,7 +22,7 @@ from research_analyst.config import PROJECT_ROOT
 from research_analyst.confidence import extract_features
 from research_analyst.llm import get_llm, with_retry
 
-NEGATIVES_FILE = PROJECT_ROOT / "samples" / "ml_negatives.txt"
+NEGATIVES_FILE = PROJECT_ROOT / "datasets" / "ml_negatives.txt"
 
 QUESTION_PROMPT = ChatPromptTemplate.from_messages(
     [
