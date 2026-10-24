@@ -1,31 +1,87 @@
 """Qdrant vector store in local (embedded) mode - no server needed.
 
+Every chunk is stored with two vectors: a dense one (nomic-embed-text) and a
+sparse BM25 one, so the same collection serves dense, keyword and hybrid search.
+
 Local mode locks its folder, so only one process (the Streamlit app OR a CLI
 script) can open data/qdrant at a time.
 """
 
-from langchain_qdrant import QdrantVectorStore
+from functools import lru_cache
+
+from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    Modifier,
+    SparseVectorParams,
+    VectorParams,
+)
 
 from research_analyst.config import settings
 from research_analyst.embeddings import get_embeddings
 
+DENSE_VECTOR = "dense"
+SPARSE_VECTOR = "sparse"
+MODES = {
+    "dense": RetrievalMode.DENSE,
+    "sparse": RetrievalMode.SPARSE,
+    "hybrid": RetrievalMode.HYBRID,
+}
 
-def build_vectorstore(client: QdrantClient, collection_name: str) -> QdrantVectorStore:
-    embeddings = get_embeddings()
+
+@lru_cache
+def get_sparse_embeddings() -> FastEmbedSparse:
+    return FastEmbedSparse(model_name=settings.sparse_model, cache_dir=str(settings.models_dir))
+
+
+def _create_collection(client: QdrantClient, collection_name: str) -> None:
+    dim = len(get_embeddings().embed_query("dimension probe"))
+    client.create_collection(
+        collection_name,
+        vectors_config={DENSE_VECTOR: VectorParams(size=dim, distance=Distance.COSINE)},
+        # IDF modifier turns raw term frequencies into proper BM25 scores
+        sparse_vectors_config={SPARSE_VECTOR: SparseVectorParams(modifier=Modifier.IDF)},
+    )
+
+
+def build_vectorstore(client: QdrantClient, collection_name: str, mode: str = "hybrid") -> QdrantVectorStore:
     if not client.collection_exists(collection_name):
-        dim = len(embeddings.embed_query("dimension probe"))
-        client.create_collection(
-            collection_name,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+        _create_collection(client, collection_name)
+    elif not client.get_collection(collection_name).config.params.sparse_vectors:
+        raise RuntimeError(
+            f"Collection '{collection_name}' was built before hybrid search was added. "
+            "Rebuild it with: uv run python scripts/ingest.py --reset"
         )
-    return QdrantVectorStore(client=client, collection_name=collection_name, embedding=embeddings)
+    return _view(client, collection_name, mode)
 
 
-def get_vectorstore() -> QdrantVectorStore:
+def _view(client: QdrantClient, collection_name: str, mode: str, validate: bool = True) -> QdrantVectorStore:
+    return QdrantVectorStore(
+        client=client,
+        collection_name=collection_name,
+        embedding=get_embeddings(),
+        sparse_embedding=get_sparse_embeddings(),
+        retrieval_mode=MODES[mode],
+        vector_name=DENSE_VECTOR,
+        sparse_vector_name=SPARSE_VECTOR,
+        validate_collection_config=validate,
+    )
+
+
+def with_mode(store: QdrantVectorStore, mode: str) -> QdrantVectorStore:
+    """The same collection, searched in another mode (dense / sparse / hybrid)."""
+    return _view(store.client, store.collection_name, mode, validate=False)
+
+
+def get_vectorstore(reset: bool = False) -> QdrantVectorStore:
     settings.vector_db_path.mkdir(parents=True, exist_ok=True)
     client = QdrantClient(path=str(settings.vector_db_path))
+    if reset and client.collection_exists(settings.collection_name):
+        client.delete_collection(settings.collection_name)
     return build_vectorstore(client, settings.collection_name)
 
 

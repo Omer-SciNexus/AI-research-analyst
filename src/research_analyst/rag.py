@@ -6,8 +6,8 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_qdrant import QdrantVectorStore
 
-from research_analyst.config import settings
 from research_analyst.llm import get_llm
+from research_analyst.retrieval import search
 
 NOT_FOUND = "I couldn't find this in the indexed documents."
 
@@ -26,9 +26,12 @@ PROMPT = ChatPromptTemplate.from_messages(
 
 
 def source_label(doc: Document) -> str:
-    page = doc.metadata.get("page")
     source = doc.metadata.get("source", "unknown")
-    return f"{source}, p.{page}" if page else source
+    if page := doc.metadata.get("page"):
+        return f"{source}, p.{page}"
+    if section := doc.metadata.get("section"):
+        return f"{source} › {section.split(' > ')[-1]}"
+    return source
 
 
 def format_context(docs: list[Document]) -> str:
@@ -37,8 +40,9 @@ def format_context(docs: list[Document]) -> str:
     )
 
 
-def retrieve(question: str, store: QdrantVectorStore, k: int | None = None) -> list[Document]:
-    return store.similarity_search(question, k=k or settings.top_k)
+def retrieve(question: str, store: QdrantVectorStore, **search_options) -> list[Document]:
+    """Hybrid search + re-ranking by default; see retrieval.search for options."""
+    return search(question, store, **search_options)
 
 
 def stream_answer(question: str, docs: list[Document]) -> Iterator[str]:
