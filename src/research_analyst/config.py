@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 load_dotenv(PROJECT_ROOT / ".env")
+# Windows without Developer Mode can't symlink; the HF cache still works, just warns loudly.
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
 def _path(name: str, default: str) -> Path:
@@ -31,6 +33,14 @@ class Settings:
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "1000"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "150"))
     top_k: int = int(os.getenv("TOP_K", "4"))
+
+    # Stage 2: hybrid search + re-ranking
+    retrieval_mode: str = os.getenv("RETRIEVAL_MODE", "hybrid")  # dense | sparse | hybrid
+    rerank: bool = os.getenv("RERANK", "true").lower() in {"1", "true", "yes"}
+    fetch_k: int = int(os.getenv("FETCH_K", "20"))  # candidates handed to the re-ranker
+    sparse_model: str = os.getenv("SPARSE_MODEL", "Qdrant/bm25")
+    reranker_model: str = os.getenv("RERANKER_MODEL", "ms-marco-MiniLM-L-12-v2")
+    models_dir: Path = _path("MODELS_DIR", "data/models")
 
 
 settings = Settings()
