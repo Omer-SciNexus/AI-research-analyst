@@ -51,6 +51,10 @@ class Settings:
     traces_dir: Path = _path("TRACES_DIR", "data/traces")
     eval_dir: Path = _path("EVAL_DIR", "data/eval")
     eval_set: Path = _path("EVAL_SET", "samples/eval_set.json")
+    # LLM-as-judge (evaluation faithfulness + the agent's fact-check). A 3B model is not a
+    # reliable judge; point these at a stronger model (e.g. Groq's free tier) when possible.
+    judge_provider: str = os.getenv("JUDGE_PROVIDER") or os.getenv("LLM_PROVIDER", "ollama")
+    judge_model: str = os.getenv("JUDGE_MODEL") or os.getenv("LLM_MODEL", "llama3.2:3b")
 
 
 settings = Settings()

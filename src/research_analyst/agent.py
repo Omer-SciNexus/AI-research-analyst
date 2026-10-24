@@ -31,8 +31,9 @@ from langgraph.types import Command, Send, interrupt
 from pydantic import BaseModel, Field
 
 from research_analyst.config import settings
-from research_analyst.llm import get_llm
-from research_analyst.rag import NOT_FOUND, PROMPT as ANSWER_PROMPT, format_context, source_label
+from research_analyst.judge import is_supported, unsupported_claims
+from research_analyst.llm import get_llm, with_retry
+from research_analyst.rag import generate_answer, source_label
 from research_analyst.retrieval import search
 from research_analyst.tracing import get_callbacks
 from research_analyst.web import web_search
@@ -85,10 +86,8 @@ class Plan(BaseModel):
 
 
 class Verdict(BaseModel):
-    supported: bool = Field(description="true only if every claim in the summary is backed by the sources")
-    unsupported_claims: list[str] = Field(
-        default_factory=list, description="each claim from the summary that the sources do not back"
-    )
+    supported: bool
+    unsupported_claims: list[str] = Field(default_factory=list)
 
 
 PLAN_PROMPT = ChatPromptTemplate.from_messages(
@@ -111,17 +110,6 @@ SUMMARY_PROMPT = ChatPromptTemplate.from_messages(
             "findings could not answer part of the question, say so.",
         ),
         ("human", "Main question: {question}\n\nFindings:\n\n{findings}{issues}"),
-    ]
-)
-
-CHECK_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            "You are a strict fact-checker. Decide whether every claim in the SUMMARY is supported by "
-            "the numbered SOURCES it cites. List each unsupported claim. Ignore style.",
-        ),
-        ("human", "SOURCES:\n\n{sources}\n\nSUMMARY:\n{summary}"),
     ]
 )
 
@@ -181,7 +169,7 @@ class ResearchAgent:
 
     def make_plan(self, question: str, feedback: str) -> list[str]:
         try:
-            plan = (PLAN_PROMPT | get_llm(temperature=0).with_structured_output(Plan)).invoke(
+            plan = with_retry(PLAN_PROMPT | get_llm(temperature=0).with_structured_output(Plan)).invoke(
                 {"question": question, "feedback": feedback}
             )
             return plan.sub_questions
@@ -193,22 +181,17 @@ class ResearchAgent:
         return docs + (web_search(sub_question, k=3) if use_web else [])
 
     def answer(self, sub_question: str, docs: list[Document]) -> str:
-        if not docs:
-            return NOT_FOUND
-        chain = ANSWER_PROMPT | get_llm()
-        return chain.invoke({"context": format_context(docs), "question": sub_question}).content
+        return generate_answer(sub_question, docs)
 
     def summarize(self, question: str, findings: str, issues: list[str]) -> str:
         fix = ("\n\nYour previous summary had unsupported claims; remove or correct them:\n- " + "\n- ".join(issues)) if issues else ""
-        return (SUMMARY_PROMPT | get_llm()).invoke({"question": question, "findings": findings, "issues": fix}).content
+        chain = with_retry(SUMMARY_PROMPT | get_llm())
+        return chain.invoke({"question": question, "findings": findings, "issues": fix}).content
 
     def verify(self, summary: str, sources: str) -> Verdict:
-        try:
-            return (CHECK_PROMPT | get_llm(temperature=0).with_structured_output(Verdict)).invoke(
-                {"sources": sources, "summary": summary}
-            )
-        except Exception:
-            return Verdict(supported=True, unsupported_claims=[])
+        if is_supported(summary, sources) is not False:  # YES, or an unclear reply: don't block the report
+            return Verdict(supported=True)
+        return Verdict(supported=False, unsupported_claims=unsupported_claims(summary, sources))
 
     # Nodes
 
