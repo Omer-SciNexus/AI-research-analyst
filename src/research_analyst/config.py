@@ -56,5 +56,11 @@ class Settings:
     judge_provider: str = os.getenv("JUDGE_PROVIDER") or os.getenv("LLM_PROVIDER", "ollama")
     judge_model: str = os.getenv("JUDGE_MODEL") or os.getenv("LLM_MODEL", "llama3.2:3b")
 
+    # Stage 5: answerability (confidence) model
+    ml_dir: Path = _path("ML_DIR", "data/ml")
+    confidence_model_path: Path = _path("CONFIDENCE_MODEL", "data/models/confidence.joblib")
+    skip_low_confidence: bool = os.getenv("SKIP_LOW_CONFIDENCE", "true").lower() in {"1", "true", "yes"}
+    auto_web_fallback: bool = os.getenv("AUTO_WEB_FALLBACK", "true").lower() in {"1", "true", "yes"}
+
 
 settings = Settings()

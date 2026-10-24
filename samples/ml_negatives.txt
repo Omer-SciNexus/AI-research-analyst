@@ -1,0 +1,72 @@
+# Questions the indexed documents cannot answer (label 0 for the confidence model).
+# First block: off-topic. Second block: near misses - same vocabulary as the documents, but not answered by them.
+What is the boiling point of water at the top of Mount Everest?
+Who won the FIFA World Cup in 2014?
+How do I bake sourdough bread at home?
+What is the capital city of Australia?
+How many moons does Jupiter have?
+Who painted the Mona Lisa?
+What is the best way to learn to play the guitar?
+How long should I boil an egg for a soft yolk?
+What causes the northern lights?
+Which ocean is the deepest?
+How do vaccines train the immune system?
+What is the population of Tokyo?
+Who wrote the novel Pride and Prejudice?
+How do I change a flat bicycle tyre?
+What is the exchange rate between the euro and the dollar today?
+When did the Roman Empire fall?
+How much water should an adult drink per day?
+What is the tallest building in the world?
+How do solar panels convert sunlight into electricity?
+Which planet is closest to the sun?
+What is the recipe for a classic margherita pizza?
+How do I train a puppy to sit?
+Who discovered penicillin?
+What is the speed of sound in air?
+How many players are on a basketball team?
+What are the symptoms of the flu?
+Which country produces the most coffee?
+How does a mortgage interest rate work?
+What is the difference between a crocodile and an alligator?
+How do I remove a red wine stain from a carpet?
+What year did humans first land on the moon?
+Which language has the most native speakers?
+How do bees make honey?
+What should I pack for a week-long hiking trip?
+What is the main ingredient in guacamole?
+How do earthquakes happen?
+Who is the current president of France?
+What is a good stretching routine before running?
+How many bones are in the human body?
+What does a blockchain miner do?
+How much does a Qdrant Cloud subscription cost per month?
+Who founded the company that makes Ollama?
+What GPU does Pinecone recommend for large indexes?
+How many parameters does GPT-4 have?
+Which company created the BM25 ranking function?
+What is the maximum context length of Gemini 2.5 Pro?
+How do I deploy Weaviate on Kubernetes?
+What license is the Llama 3 model released under?
+How much RAM does Milvus need for a billion vectors?
+Who invented the transformer architecture?
+What is the latency of OpenAI's text-embedding-3-large API?
+How do I fine-tune Mistral 7B with LoRA on a single GPU?
+Which vector database does Netflix use in production?
+What year was LangChain first released?
+How does CrewAI assign roles to its agents?
+What is the price per million tokens for Claude models?
+How many GitHub stars does Chroma have?
+What tokenizer does Qwen 2.5 use?
+Which cloud regions does Pinecone serverless support?
+How do I enable GPU acceleration for FAISS on Windows?
+What is the recommended batch size for training a cross-encoder?
+Who maintains the Sentence-Transformers library?
+What is HNSW's memory overhead per vector?
+How do I set up single sign-on for Langfuse Cloud?
+Which benchmark measures long-context retrieval in LLMs?
+What is the energy consumption of training Llama 3 70B?
+How do I migrate data from Chroma to Pgvector?
+What are the rate limits of the Groq free tier?
+Which embedding model tops the MTEB leaderboard this month?
+How do I connect AutoGen agents to a SQL database?
