@@ -4,11 +4,12 @@ Usage:
     uv run python scripts/ingest.py                 # everything in data/docs
     uv run python scripts/ingest.py samples         # a folder
     uv run python scripts/ingest.py paper.pdf       # a single file
+    uv run python scripts/ingest.py --reset samples # wipe the index first
 
 Stop the Streamlit app first: Qdrant local mode allows one process at a time.
 """
 
-import sys
+import argparse
 import time
 from pathlib import Path
 
@@ -18,13 +19,19 @@ from research_analyst.vectorstore import get_vectorstore, list_sources
 
 
 def main() -> None:
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else settings.docs_dir
-    files = find_files(target)
-    if not files:
-        print(f"No .pdf/.md/.txt files found in {target}")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("paths", nargs="*", type=Path, default=[settings.docs_dir])
+    parser.add_argument("--reset", action="store_true", help="delete and rebuild the collection")
+    args = parser.parse_args()
+
+    files = [f for path in args.paths for f in find_files(path)]
+    if not files and not args.reset:
+        print(f"No .pdf/.md/.txt files found in {', '.join(map(str, args.paths))}")
         return
 
-    store = get_vectorstore()
+    store = get_vectorstore(reset=args.reset)
+    if args.reset:
+        print(f"Collection '{settings.collection_name}' reset.")
     for file in files:
         start = time.perf_counter()
         count = ingest_file(file, store)
