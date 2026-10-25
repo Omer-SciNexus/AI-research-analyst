@@ -82,7 +82,11 @@ def to_matrix(rows: list[dict[str, float]]) -> np.ndarray:
 
 
 CANDIDATES = {
-    "logistic_regression": make_pipeline(StandardScaler(), LogisticRegression(class_weight="balanced", max_iter=1000)),
+    # Strong regularization (C=0.1): the classes are nearly separable, and an unregularized
+    # fit pushes the boundary right up against the easiest positives.
+    "logistic_regression": make_pipeline(
+        StandardScaler(), LogisticRegression(C=0.1, class_weight="balanced", max_iter=1000)
+    ),
     "gradient_boosting": GradientBoostingClassifier(n_estimators=150, max_depth=2, learning_rate=0.1, random_state=0),
 }
 
