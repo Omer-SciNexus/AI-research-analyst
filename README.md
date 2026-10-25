@@ -11,8 +11,8 @@ An agentic research & report analyst built with **RAG, LangChain, LangGraph** an
 | 2 | Better RAG: hybrid search (BM25 + vector), re-ranker, smart chunking | ✅ |
 | 3 | LangGraph agents: planner / researcher / fact-checker / writer, human-in-the-loop | ✅ |
 | 4 | Evaluation & observability: retrieval/answer metrics, LLM judge, local tracing | ✅ |
-| 5 | ML: fine-tuned embeddings / query router / confidence scorer | |
-| 6 | Product: FastAPI + frontend, deploy to Hugging Face Spaces | |
+| 5 | ML: answerability (confidence) model that skips the LLM or triggers web search | ✅ |
+| 6 | Product: FastAPI + web UI, Docker, CI, Hugging Face Spaces deploy script | ✅ (deploy needs your HF token) |
 
 ## Setup
 
@@ -140,10 +140,72 @@ Answer quality (`llama3.2:3b` on CPU, hybrid + rerank, ~7 s per answer):
 
 **Tracing**: a LangChain callback (`tracing.py`) appends every top-level run and every LLM call (node, model, latency, input/output tokens) to `data/traces/<date>.jsonl`. LangGraph passes it down to every node, including parallel research tasks. The Evaluation page lists runs, their LLM calls and generation speed. For a hosted dashboard, Langfuse's free cloud tier plugs in by setting `LANGFUSE_*` in `.env` and running `uv add langfuse`; self-hosting Langfuse needs about 2 GB of Docker images, so it isn't the default.
 
+## Stage 5 — Confidence model (ML)
+
+```bash
+uv run python scripts/make_ml_dataset.py    # LLM writes training questions, ~6 min on CPU
+uv run python scripts/train_confidence.py   # cross-validation, hold-out test, saves the model
+```
+
+A scikit-learn classifier predicts **whether the indexed documents can answer a question** from retrieval signals alone, before any LLM call: re-ranker scores (top 1, top 2, mean of top 3, gap), best dense cosine similarity, best BM25 score, how many question words appear in the top passage, and question length.
+
+- **Document Chat / API**: below the threshold the answer is "couldn't find this" immediately, without calling the LLM (an off-topic question took 1.3 s instead of ~20 s). The confidence is shown with every answer; the skip can be turned off.
+- **Research agent**: web mode `auto` (the default) searches DuckDuckGo only for sub-questions the documents can't answer.
+
+**Training data.** For every indexed chunk the LLM writes two questions: one that may reuse the passage's words and one phrased the way an outsider would ask. Unanswerable examples come from `datasets/ml_negatives.txt`: 40 off-topic questions plus 30 near misses that use the same vocabulary as the documents ("How much does Qdrant Cloud cost?"). The file sits outside `samples/` on purpose, since anything there gets indexed.
+
+**Results** (149 questions, 79 answerable, 5-fold cross-validation; hold-out = the 17 hand-written questions of the evaluation set, never seen in training):
+
+| Model | ROC-AUC | Accuracy | F1 |
+|---|---|---|---|
+| baseline: top re-rank score alone | 0.992 | 0.940 | 0.944 |
+| **logistic regression** (chosen) | **0.994** | **0.953** | **0.956** |
+| gradient boosting | 0.959 | 0.940 | 0.944 |
+
+On the hold-out, all 15 answerable questions were kept (lowest confidence 0.49) and both unanswerable ones were caught (0.15 and 0.07) at the threshold of 0.41. The threshold is the highest one that still keeps ≥ 95% of answerable questions in cross-validation, because skipping an answerable question costs more than one wasted LLM call.
+
+Lessons from the first attempt:
+- Questions copied from the passage were too easy: every model, even the baseline, scored a perfect 1.0 AUC. The cut-off landed at 0.86, and on the hold-out the model would have skipped 3 of 15 rephrased real questions. Paraphrased training questions and stronger regularization (`C=0.1`) fixed it.
+- The re-ranker score alone is already a strong signal. The other features add a small, consistent gain in accuracy and F1, and make the model more robust when the re-ranker is unsure.
+
+Fine-tuning the embedding model was considered and skipped: Stage 4 showed retrieval already finds the right chunk in the top 4 every time, and fine-tuning would need PyTorch (~200 MB+) and a GPU.
+
+## Stage 6 — API, web UI & deployment
+
+```bash
+uv run uvicorn research_analyst.api:app --port 8000
+# web UI: http://localhost:8000      interactive API docs: http://localhost:8000/docs
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | models in use, confidence model, number of indexed chunks |
+| `GET` / `POST /api/documents`, `DELETE /api/documents/{name}` | list, upload (pdf/md/txt) and remove documents |
+| `POST /api/ask` | cited answer + confidence + sources (`mode`, `rerank`, `skip_low_confidence` optional) |
+| `POST /api/ask/stream` | the same as server-sent events: `meta` (confidence, sources), `token`…, `done` |
+| `POST /api/research` → `POST /api/research/{id}/resume` | research agent: returns the plan for approval, then the report |
+| `GET /api/research/{id}` | state of a run (runs are checkpointed in SQLite) |
+
+The web UI (`web/index.html`) is one static page with no build step and no external scripts: document upload and removal, streaming chat with confidence and sources, and the research agent with plan review. Like the Streamlit app, the API opens `data/qdrant` in local mode, so run one of the two at a time.
+
+**Deploying to Hugging Face Spaces (free CPU tier).** The `Dockerfile` runs the API + web UI without Ollama: answers come from Groq's free tier (`llama-3.3-70b-versatile`) and embeddings run in-process with fastembed (`nomic-ai/nomic-embed-text-v1.5-Q`, the ONNX build of the same model used locally). Models are downloaded while the image builds, and the sample documents are indexed on first start.
+
+```bash
+# needs a Hugging Face token with write access and a free Groq key (https://console.groq.com/keys)
+set HF_TOKEN=hf_...
+set GROQ_API_KEY=gsk_...
+uv run python scripts/deploy_space.py --space <your-username>/research-analyst
+```
+
+The script creates the Space, stores the Groq key as a Space secret and uploads only the source code (~100 KB); the image is built on Hugging Face's servers. A Space's disk is temporary, so uploaded documents disappear when it restarts.
+
+**CI**: `.github/workflows/ci.yml` runs the test suite on every push. Tests that need Ollama skip themselves; the API tests use fake embeddings and a fake LLM.
+
 ### Troubleshooting
 
 - **`llama-server process has terminated: exit status 0xc0000005`**: Ollama tried to use an old/unsupported GPU (e.g. GeForce GT 730 via Vulkan). Force CPU by setting the user environment variables `GGML_VK_VISIBLE_DEVICES=-1` and `CUDA_VISIBLE_DEVICES=-1`, then restart Ollama.
 - **`[WinError 10054] An existing connection was forcibly closed` / Ollama keeps restarting**: a VPN that hooks Windows networking can crash Ollama. Astrill installs a Winsock LSP (`ASProxy64.dll`, see `netsh winsock show catalog`) that every process loads, in any VPN mode, and Ollama dies inside `WSASend` (exit `0xc0000005`, logged in `%LOCALAPPDATA%\Ollama\server.log`). The tray app restarts the server within seconds and all LLM/embedding calls here retry, so runs survive; streaming chat only retries before the first token. To remove the cause, exclude Ollama from the VPN or remove the LSP (`netsh winsock reset`, which affects the VPN).
+- **Ollama stops answering but its process is still running**: occasionally the crashed server doesn't exit, so the tray app never restarts it (`server.log` ends with a register dump). Every request here times out (`OLLAMA_TIMEOUT`, 300 s; embeddings 60 s) and is retried, but Ollama itself only recovers when you quit and restart the tray app.
 - **Ollama app keeps downloading updates**: the tray app downloads each new installer (~1.6 GB) in the background. Turn off auto-update in Ollama's settings (stored as `auto_update_enabled` in `%LOCALAPPDATA%\Ollama\db.sqlite`). `OLLAMA_NO_CLOUD=1` disables its cloud features.
 - **Model download keeps stalling**: `ollama pull` opens 16 parallel connections, which flaky connections can't sustain. Download the model files with a single resumable stream instead and drop them into `OLLAMA_MODELS/blobs` with the manifest under `manifests/registry.ollama.ai/library/<model>/<tag>`. Set `OLLAMA_NOPRUNE=1` so Ollama doesn't delete them half-way.
 
@@ -185,7 +247,8 @@ src/research_analyst/   application package
   ui.py                 shared Streamlit helpers
 scripts/                entry points: hello_llm, ingest, ask, research, evaluate,
                         make_ml_dataset, train_confidence, warmup, deploy_space
-samples/                sample documents, labelled evaluation set, ML negatives
+samples/                sample documents + labelled evaluation set (indexed by the demo)
+datasets/               confidence-model negatives (never indexed)
 tests/                  pytest suite (Ollama tests auto-skip if models are missing)
 data/                   local documents + vector DB (git-ignored)
 notebooks/              experiments
