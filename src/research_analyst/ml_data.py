@@ -24,13 +24,16 @@ from research_analyst.llm import get_llm, with_retry
 
 NEGATIVES_FILE = PROJECT_ROOT / "datasets" / "ml_negatives.txt"
 
+# Questions that copy the passage's wording are too easy (re-rank score ~1.0) and teach the
+# model a cut-off real, rephrased questions fall below; so half of them must be paraphrased.
 QUESTION_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You write test questions. Write {n} different short questions that can be answered using "
-            "only the passage below, each about a specific fact in it. Write one question per line, "
-            "without numbering or any other text.",
+            "You write test questions that can be answered using only the passage below, each about a "
+            "specific fact in it. Write exactly 2 questions, one per line, without numbering or any "
+            "other text. The first may reuse words from the passage. The second must be phrased the way "
+            "a user who has never seen the passage would ask, using different words.",
         ),
         ("human", "{passage}"),
     ]
@@ -56,9 +59,10 @@ def parse_questions(text: str) -> list[str]:
     return questions
 
 
-def generate_questions(passage: str, n: int = 2) -> list[str]:
-    reply = with_retry(QUESTION_PROMPT | get_llm(temperature=0.7)).invoke({"passage": passage[:2000], "n": n})
-    return parse_questions(reply.content)[:n]
+def generate_questions(passage: str) -> list[str]:
+    """One question close to the passage's wording, one paraphrased."""
+    reply = with_retry(QUESTION_PROMPT | get_llm(temperature=0.7)).invoke({"passage": passage[:2000]})
+    return parse_questions(reply.content)[:2]
 
 
 def load_negatives(path: Path = NEGATIVES_FILE) -> list[str]:
@@ -66,12 +70,12 @@ def load_negatives(path: Path = NEGATIVES_FILE) -> list[str]:
     return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
 
 
-def positive_questions(store: QdrantVectorStore, per_chunk: int = 2) -> Iterator[dict]:
+def positive_questions(store: QdrantVectorStore) -> Iterator[dict]:
     for chunk in all_chunks(store):
         if len(chunk.page_content) < 200:  # headings and fragments make poor questions
             continue
-        for question in generate_questions(chunk.page_content, per_chunk):
-            yield {"question": question, "label": 1, "origin": chunk.metadata.get("source", "unknown")}
+        for style, question in zip(["literal", "paraphrased"], generate_questions(chunk.page_content)):
+            yield {"question": question, "label": 1, "origin": chunk.metadata.get("source", "unknown"), "style": style}
 
 
 def featurize(rows: list[dict], store: QdrantVectorStore) -> list[dict]:
