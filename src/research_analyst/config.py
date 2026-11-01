@@ -65,5 +65,10 @@ class Settings:
     # Stage 6: API / deployment
     index_samples_on_start: bool = os.getenv("INDEX_SAMPLES_ON_START", "false").lower() in {"1", "true", "yes"}
 
+    # Voice: local speech-to-text + text-to-speech for Document Chat
+    stt_model: str = os.getenv("STT_MODEL", "small")  # faster-whisper; multilingual, so it can translate
+    stt_language: str | None = os.getenv("STT_LANGUAGE", "ko") or None  # spoken language; empty = auto-detect
+    tts_voice: str = os.getenv("TTS_VOICE", "en_US-lessac-low")  # Piper
+
 
 settings = Settings()
