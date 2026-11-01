@@ -11,6 +11,7 @@ from research_analyst.ingest import SUPPORTED_SUFFIXES, ingest_file
 from research_analyst.rag import NOT_FOUND, prepare, source_label, stream_answer
 from research_analyst.ui import get_store as store
 from research_analyst.vectorstore import MODES, list_sources
+from research_analyst.voice import synthesize, transcribe
 
 st.set_page_config(page_title="Research Analyst", page_icon="📚", layout="wide")
 
@@ -47,6 +48,9 @@ with st.sidebar:
         help="dense = meaning (embeddings) · sparse = keywords (BM25) · hybrid = both, fused with RRF",
     )
     use_rerank = st.toggle("Re-rank results", value=settings.rerank, help=f"Cross-encoder: {settings.reranker_model}")
+
+    st.subheader("🎙️ Voice")
+    speak_answers = st.toggle("Speak answers", value=False, help=f"Piper voice: {settings.tts_voice}")
 
     st.subheader("🎯 Confidence model")
     model = load_model()
@@ -97,7 +101,18 @@ for message in st.session_state.messages:
         if message.get("sources"):
             show_sources(message["sources"])
 
-if question := st.chat_input("Ask about your documents…"):
+audio = st.audio_input(f"Or ask by voice ({settings.stt_language or 'any language'} → English)")
+spoken_question = None
+if audio is not None:
+    audio_hash = hash(audio.getvalue())
+    if st.session_state.get("last_audio_hash") != audio_hash:
+        st.session_state.last_audio_hash = audio_hash
+        with st.spinner("Transcribing…"):
+            spoken_question = transcribe(audio)
+
+question = st.chat_input("Ask about your documents…") or spoken_question
+
+if question:
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
@@ -119,5 +134,8 @@ if question := st.chat_input("Ask about your documents…"):
         ]
         if sources:
             show_sources(sources)
+        if speak_answers:
+            with st.spinner("Synthesizing speech…"):
+                st.audio(synthesize(reply), format="audio/wav", autoplay=True)
 
     st.session_state.messages.append({"role": "assistant", "content": reply, "note": note, "sources": sources})
