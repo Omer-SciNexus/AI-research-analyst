@@ -28,6 +28,7 @@ COPY --chown=user src ./src
 COPY --chown=user web ./web
 COPY --chown=user samples ./samples
 COPY --chown=user scripts/warmup.py ./scripts/warmup.py
+COPY --chown=user data/models/confidence.joblib ./data/models/confidence.joblib
 RUN uv sync --frozen --no-dev --extra groq && python scripts/warmup.py
 
 EXPOSE 7860

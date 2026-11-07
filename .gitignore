@@ -13,6 +13,9 @@ build/
 # Data & artifacts
 data/*
 !data/.gitkeep
+!data/models/
+data/models/*
+!data/models/confidence.joblib
 *.sqlite
 *.db
 chroma/
