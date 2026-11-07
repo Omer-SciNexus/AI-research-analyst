@@ -69,6 +69,8 @@ class Settings:
     stt_model: str = os.getenv("STT_MODEL", "small")  # faster-whisper; multilingual, so it can translate
     stt_language: str | None = os.getenv("STT_LANGUAGE", "ko") or None  # spoken language; empty = auto-detect
     tts_voice: str = os.getenv("TTS_VOICE", "en_US-lessac-low")  # Piper
+    voice_dataset_dir: Path = _path("VOICE_DATASET_DIR", "data/voice_dataset")  # clips for training a Piper voice
+    voice_clips_dir: Path = _path("VOICE_CLIPS_DIR", "data/voice_clips")  # the same, cut from videos
 
 
 settings = Settings()
