@@ -32,6 +32,8 @@ gemini = ["langchain-google-genai>=3.0"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
+# Cutting voice clips out of videos (scripts/prepare_voice_clips.py); not needed by the app
+voice-prep = ["sherpa-onnx>=2.0.1"]
 
 [build-system]
 requires = ["hatchling"]
