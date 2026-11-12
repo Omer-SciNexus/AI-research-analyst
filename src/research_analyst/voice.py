@@ -47,15 +47,26 @@ def transcribe(audio: BinaryIO) -> str:
     return " ".join(segment.text.strip() for segment in segments).strip()
 
 
+DEFAULT_TTS_VOICE = "en_US-lessac-low"  # fetched by scripts/download_voice_models.sh
+
+
+def tts_voice() -> str:
+    """The configured Piper voice, or the default one while its files aren't in models_dir yet."""
+    model = settings.models_dir / f"{settings.tts_voice}.onnx"
+    if model.exists() and model.with_name(f"{model.name}.json").exists():
+        return settings.tts_voice
+    return DEFAULT_TTS_VOICE
+
+
 @lru_cache
-def get_piper() -> PiperVoice:
-    model_path = settings.models_dir / f"{settings.tts_voice}.onnx"
-    return PiperVoice.load(model_path)
+def get_piper(voice: str) -> PiperVoice:
+    return PiperVoice.load(settings.models_dir / f"{voice}.onnx")
 
 
 def synthesize(text: str) -> bytes:
     """Render `text` to a WAV clip (bytes), ready for st.audio()."""
-    chunks = list(get_piper().synthesize(text))
+    # Looked up on every call, so a voice copied into models_dir is used without a restart.
+    chunks = list(get_piper(tts_voice()).synthesize(text))
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
         wav_file.setnchannels(chunks[0].sample_channels if chunks else 1)
