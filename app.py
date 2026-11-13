@@ -11,7 +11,7 @@ from research_analyst.ingest import SUPPORTED_SUFFIXES, ingest_file
 from research_analyst.rag import NOT_FOUND, prepare, source_label, stream_answer
 from research_analyst.ui import get_store as store
 from research_analyst.vectorstore import MODES, list_sources
-from research_analyst.voice import synthesize, transcribe
+from research_analyst.voice import synthesize, transcribe, tts_voice
 
 st.set_page_config(page_title="Research Analyst", page_icon="📚", layout="wide")
 
@@ -50,7 +50,10 @@ with st.sidebar:
     use_rerank = st.toggle("Re-rank results", value=settings.rerank, help=f"Cross-encoder: {settings.reranker_model}")
 
     st.subheader("🎙️ Voice")
-    speak_answers = st.toggle("Speak answers", value=False, help=f"Piper voice: {settings.tts_voice}")
+    voice = tts_voice()
+    speak_answers = st.toggle("Speak answers", value=False, help=f"Piper voice: {voice}")
+    if voice != settings.tts_voice:
+        st.caption(f"Voice `{settings.tts_voice}` isn't in `{settings.models_dir}` yet, so `{voice}` is used.")
 
     st.subheader("🎯 Confidence model")
     model = load_model()
