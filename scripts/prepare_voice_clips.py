@@ -23,7 +23,6 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-import sherpa_onnx
 
 from research_analyst.config import settings
 from research_analyst.voice import get_whisper
@@ -47,6 +46,8 @@ SPEAKER_MODEL = settings.models_dir / "3dspeaker_speech_campplus_sv_en_voxceleb_
 
 class SpeakerEmbedder:
     def __init__(self, model: Path):
+        import sherpa_onnx  # voice-prep group; only needed to analyse new videos, not to rebuild
+
         config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(model), num_threads=4)
         self.extractor = sherpa_onnx.SpeakerEmbeddingExtractor(config)
         self.dim = self.extractor.dim
